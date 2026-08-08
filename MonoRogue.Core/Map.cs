@@ -1,13 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
+using SadConsole;
 using SadRogue.Primitives;
 using Color = SadRogue.Primitives.Color;
-using SadConsole;
 
-using MonoRogue.Core;
 
-namespace MonoRogue.Visuals;
+namespace MonoRogue.Core;
 
-internal class Map
+public class Map
 {
     private List<GameObject> _mapObjects;
     private ScreenSurface _mapSurface;

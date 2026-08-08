@@ -1,11 +1,10 @@
 using SadConsole;
 using Point = SadRogue.Primitives.Point;
-using MonoRogue.Visuals;
 
 
 namespace MonoRogue.Core;
 
-internal class GameObject
+public class GameObject
 {
     private ColoredGlyph _mapAppearance = new ColoredGlyph();
 

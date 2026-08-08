@@ -1,6 +1,6 @@
 ﻿using SadConsole;
 using SadConsole.Configuration;
-using MonoRogue.Visuals;
+using MonoRogue.Core;
 
 
 Settings.WindowTitle = "My MonoRogue Game";

@@ -3,7 +3,7 @@ using SadConsole;
 using Game = SadConsole.Game;
 using SadConsole.Input;
 
-namespace MonoRogue.Visuals;
+namespace MonoRogue.Core;
 
 public class RootScreen : ScreenObject
 {
