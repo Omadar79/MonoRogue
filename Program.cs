@@ -1,17 +1,15 @@
-﻿using MonoRogue.Core;
+﻿using SadConsole;
+using SadConsole.Configuration;
+using MonoRogue.Visuals;
 
-public static class Program
-{
-    /// <summary>
-    /// The main entry point for the application.
-    /// </summary>
-    [STAThread]
-    public static void Main()
-    {
-        using ( var game = new RogueGame() )
-    {
-        game.Run();
-    }
-            
-    }
-}
+
+Settings.WindowTitle = "My MonoRogue Game";
+
+Builder
+    .GetBuilder()
+    .SetWindowSizeInCells(120, 38)
+    .ConfigureFonts(true)
+    .SetStartingScreen<RootScreen>()
+    .IsStartingScreenFocused(true)
+    .Run();
+
