@@ -7,10 +7,14 @@ namespace MonoRogue.Core;
 
 public class RootScreen : ScreenObject
 {
+    private  GameMain _game;
     private Map _map;
 
-    public RootScreen()
+
+
+    public RootScreen(GameMain game)
     {
+        _game = game;
         _map = new Map(Game.Instance.ScreenCellsX, Game.Instance.ScreenCellsY - 5);
         Children.Add(_map.SurfaceObject);
     }
