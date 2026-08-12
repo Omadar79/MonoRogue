@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+using Arch.Core;
 using SadConsole;
 using SadRogue.Primitives;
 using Color = SadRogue.Primitives.Color;
@@ -6,27 +6,34 @@ using Color = SadRogue.Primitives.Color;
 
 namespace MonoRogue.Core;
 
-public class Map
+public sealed class Map : IDisposable
 {
-    private List<GameObject> _mapObjects;
+    private readonly World _world;
+    private readonly QueryDescription _blockingEntities;
+    private readonly QueryDescription _playerEntities;
+    private readonly QueryDescription _renderableEntities;
     private ScreenSurface _mapSurface;
 
-    public IReadOnlyList<GameObject> GameObjects => _mapObjects.AsReadOnly();
+    public World World => _world;
     public ScreenSurface SurfaceObject => _mapSurface;
-    public GameObject UserControlledObject { get; set; }
 
     public Map(int mapWidth, int mapHeight)
     {
-        _mapObjects = new List<GameObject>();
+        _world = World.Create();
+        _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
+        _playerEntities = new QueryDescription().WithAll<Position, PlayerControlled, RenderGlyph>();
+        _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
         _mapSurface = new ScreenSurface(mapWidth, mapHeight);
         _mapSurface.UseMouse = false;
 
         FillBackground();
 
-        UserControlledObject = new GameObject(new ColoredGlyph(Color.White, Color.Black, 2), _mapSurface.Surface.Area.Center, _mapSurface);
+        CreatePlayer(_mapSurface.Surface.Area.Center);
 
         CreateTreasure();
         CreateMonster();
+
+        RefreshSurface();
     }
 
     private void FillBackground()
@@ -43,59 +50,100 @@ public class Map
                                 (x, y, color) => _mapSurface.Surface[x, y].Background = color);
     }
 
+    private void CreatePlayer(Point position)
+    {
+        _world.Create(new Position(position), new RenderGlyph(new ColoredGlyph(Color.White, Color.Black, 2)), new PlayerControlled(), new BlocksMovement());
+    }
+
     private void CreateTreasure()
     {
-        // Try 1000 times to get an empty map position
         for (int i = 0; i < 1000; i++)
         {
-            // Get a random position
             Point randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width),
                                              Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
 
-            // Check if any object is already positioned there, repeat the loop if found
-            bool foundObject = _mapObjects.Any(obj => obj.Position == randomPosition);
-            if (foundObject) continue;
+            if (IsBlocked(randomPosition)) continue;
 
-            // If the code reaches here, we've got a good position, create the game object.
-            GameObject treasure = new GameObject(new ColoredGlyph(Color.Yellow, Color.Black, 'v'), randomPosition, _mapSurface);
-            _mapObjects.Add(treasure);
+            _world.Create(new Position(randomPosition), new RenderGlyph(new ColoredGlyph(Color.Yellow, Color.Black, 'v')), new BlocksMovement());
             break;
         }
     }
 
     private void CreateMonster()
     {
-        // Try 1000 times to get an empty map position
         for (int i = 0; i < 1000; i++)
         {
-            // Get a random position
             Point randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width),
                                                 Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
 
-            // Check if any object is already positioned there, repeat the loop if found
-            bool foundObject = _mapObjects.Any(obj => obj.Position == randomPosition);
-            if (foundObject) continue;
+            if (IsBlocked(randomPosition)) continue;
 
-            // If the code reaches here, we've got a good position, create the game object.
-            GameObject monster = new GameObject(new ColoredGlyph(Color.Red, Color.Black, 'M'), randomPosition, _mapSurface);
-            _mapObjects.Add(monster);
+            _world.Create(new Position(randomPosition), new RenderGlyph(new ColoredGlyph(Color.Red, Color.Black, 'M')), new BlocksMovement());
             break;
         }
     }
 
-    public bool TryGetMapObject(Point position, [NotNullWhen(true)] out GameObject? gameObject)
+    public bool TryMovePlayer(Point offset)
     {
-        // Try to find a map object at that position
-        foreach (var otherGameObject in _mapObjects)
+        var moved = false;
+
+        _world.Query(in _playerEntities, (ref Position position, ref RenderGlyph renderGlyph) =>
         {
-            if (otherGameObject.Position == position)
+            var destination = position.Value + offset;
+            if (!IsValidCell(destination) || IsBlocked(destination))
             {
-                gameObject = otherGameObject;
-                return true;
+                return;
             }
+
+            position.Value = destination;
+            moved = true;
+        });
+
+        if (moved)
+        {
+            RefreshSurface();
         }
 
-        gameObject = null;
-        return false;
+        return moved;
+    }
+
+    private bool IsValidCell(Point position)
+    {
+        return _mapSurface.IsValidCell(position.X, position.Y);
+    }
+
+    private bool IsBlocked(Point position)
+    {
+        var blocked = false;
+
+        _world.Query(in _blockingEntities, (ref Position otherPosition) =>
+        {
+            if (otherPosition.Value == position)
+            {
+                blocked = true;
+            }
+        });
+
+        return blocked;
+    }
+
+    private void RefreshSurface()
+    {
+        FillBackground();
+
+        _world.Query(in _renderableEntities, (ref Position position, ref RenderGlyph glyph) =>
+        {
+            if (IsValidCell(position.Value))
+            {
+                glyph.Value.CopyAppearanceTo(_mapSurface.Surface[position.Value]);
+            }
+        });
+
+        _mapSurface.IsDirty = true;
+    }
+
+    public void Dispose()
+    {
+        _world.Dispose();
     }
 }

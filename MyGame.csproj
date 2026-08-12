@@ -11,6 +11,7 @@
 
 
   <ItemGroup>
+    <PackageReference Include="Arch" Version="2.1.0" />
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4.1" />
     <PackageReference Include="RogueSharp" Version="4.2.0" />
     <PackageReference Include="SadConsole.Host.MonoGame" Version="10.10.0" />
