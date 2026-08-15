@@ -11,7 +11,7 @@ Primary stack:
 Project layout:
 - Program.cs: application startup and SadConsole host configuration.
 - MonoRogue.Core/GameMain.cs: high-level game state and flow.
-- MonoRogue.Core/Map.cs: map surface, entities, and spatial interactions.
+- MonoRogue.Core/MapBase.cs: Starting map surface to run game, entities, and spatial interactions.
 - MonoRogue.Core/Components.cs: ECS component definitions for position, rendering, and tags.
 - MonoRogue.Screens/RootScreen.cs: screen composition and keyboard input routing.
 

@@ -13,8 +13,6 @@ public static class Program
 
         // Create the game main logic object
         var gameMain = new GameMain();
-        // Start the game so gameplay input is accepted by default
-        gameMain.StartGame();
 
 
         // setup the SadConsole game engine and create the main window.
@@ -23,7 +21,7 @@ public static class Program
         Builder.GetBuilder()
                 .ConfigureFonts(true)
                 .SetWindowSizeInCells(GameSettings.GAME_WIDTH, GameSettings.GAME_HEIGHT)
-                .SetStartingScreen(rootScreen => new RootScreen(gameMain))
+                .SetStartingScreen(_ => new RootScreen(gameMain))
                 .IsStartingScreenFocused(true)
                 .Run();
 
