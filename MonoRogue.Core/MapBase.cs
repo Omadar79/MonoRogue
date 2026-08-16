@@ -96,8 +96,7 @@ public class MapBase : IDisposable
     {
         for (int i = 0; i < 1000; i++)
         {
-            Point randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width),
-                                                Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
+            Point randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width),Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
 
             if (IsBlocked(randomPosition)) continue;
 
@@ -117,12 +116,12 @@ public class MapBase : IDisposable
         var blocked = false;
 
         _world.Query(in _blockingEntities, (ref Position otherPosition) =>
-        {
-            if (otherPosition.Value == position)
             {
-                blocked = true;
-            }
-        });
+                if (otherPosition.Value == position)
+                {
+                    blocked = true;
+                }
+            });
 
         return blocked;
     }
@@ -132,12 +131,12 @@ public class MapBase : IDisposable
         FillBackground();
 
         _world.Query(in _renderableEntities, (ref Position position, ref RenderGlyph glyph) =>
-        {
-            if (IsValidCell(position.Value))
             {
-                glyph.Value.CopyAppearanceTo(_mapSurface.Surface[position.Value]);
-            }
-        });
+                if (IsValidCell(position.Value))
+                {
+                    glyph.Value.CopyAppearanceTo(_mapSurface.Surface[position.Value]);
+                }
+            });
 
         _mapSurface.IsDirty = true;
     }

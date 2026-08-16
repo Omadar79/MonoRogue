@@ -6,21 +6,22 @@ using Color = SadRogue.Primitives.Color;
 namespace MonoRogue.Core;
 public class RootScreen : ScreenObject
 {
-    private  GameMain _game;
+    private GameMain _game;
     private MapBase _map;
     private ScreenSurface _pauseOverlay;
     private ScreenSurface _menuOverlay;
     private int _menuSelectedIndex = 0;
-    private readonly string[] _menuOptions = new[] { "New Game", "Exit Game" };
+    private readonly string[] _menuOptions = ["New Game", "Exit Game"];
 
     public RootScreen(GameMain game)
     {
         _game = game;
-
+        
         UseKeyboard = true;
 
         // Create the main map 
         _map = new MapBase(Game.Instance.ScreenCellsX, Game.Instance.ScreenCellsY - 5);
+        
         // Ensure the map surface does not steal keyboard focus from this screen
         _map.SurfaceObject.UseKeyboard = false;
         Children.Add(_map.SurfaceObject);
@@ -50,30 +51,35 @@ public class RootScreen : ScreenObject
             if (Children[i] is ScreenObject child && child.IsVisible && child.UseKeyboard)
             {
                 if (child.ProcessKeyboard(keyboard))
+                {
                     return true;
+                }
             }
         }
 
         bool handled = false;
 
-        var commands = _game.ProcessKeyboard(keyboard);
+        // Create an input-provider adapter that translates the SadConsole Keyboard snapshot
+        // into domain-level InputCommand instances, then pass that to the game core.
+        var provider = new SadConsoleInputProvider(_game, keyboard);
+        var commands = _game.ProcessInput(provider);
         foreach (var cmd in commands)
         {
             switch (cmd.Type)
             {
-                case GameMain.InputType.MenuUp:
+                case InputType.MenuUp:
                     _menuSelectedIndex = (_menuSelectedIndex - 1 + _menuOptions.Length) % _menuOptions.Length;
                     DrawMainMenu();
                     handled = true;
                     break;
 
-                case GameMain.InputType.MenuDown:
+                case InputType.MenuDown:
                     _menuSelectedIndex = (_menuSelectedIndex + 1) % _menuOptions.Length;
                     DrawMainMenu();
                     handled = true;
                     break;
 
-                case GameMain.InputType.MenuSelect:
+                case InputType.MenuSelect:
                     var choice = _menuOptions[_menuSelectedIndex];
                     if (choice == "New Game")
                     {
@@ -87,12 +93,12 @@ public class RootScreen : ScreenObject
                     handled = true;
                     break;
 
-                case GameMain.InputType.MenuExit:
+                case InputType.MenuExit:
                     Environment.Exit(0);
                     handled = true;
                     break;
 
-                case GameMain.InputType.TogglePause:
+                case InputType.TogglePause:
                     _game.TogglePause();
 
                     // Show or hide the pause overlay based on game state
@@ -105,7 +111,7 @@ public class RootScreen : ScreenObject
                     handled = true;
                     break;
 
-                case GameMain.InputType.Move:
+                case InputType.Move:
                     _map.TryMovePlayer(cmd.Delta);
                     handled = true;
                     break;
@@ -130,7 +136,7 @@ public class RootScreen : ScreenObject
             }
         }
 
-        var msg = "PAUSED - Press Escape to resume";
+        const string msg = "PAUSED - Press Escape to resume";
         int msgX = Math.Max(0, (surface.Width - msg.Length) / 2);
         int msgY = Math.Max(0, surface.Height / 2);
 
@@ -157,7 +163,7 @@ public class RootScreen : ScreenObject
             }
         }
 
-        var title = "MonoRogue";
+        const string title = "MonoRogue";
         int titleX = Math.Max(0, (surface.Width - title.Length) / 2);
         int titleY = Math.Max(0, surface.Height / 3);
 
@@ -187,5 +193,80 @@ public class RootScreen : ScreenObject
         }
 
         _menuOverlay.IsDirty = true;
+    }
+
+    // Adapter that bridges SadConsole keyboard snapshots to the core IInputProvider interface.
+    // This keeps the core free of SadConsole types while allowing the UI to decide how keys
+    // map to domain-level commands (it may consult the game's current state when mapping).
+    private class SadConsoleInputProvider : IInputProvider
+    {
+        private readonly GameMain _game;
+        private readonly Keyboard _keyboard;
+
+        public SadConsoleInputProvider(GameMain game, Keyboard keyboard)
+        {
+            _game = game;
+            _keyboard = keyboard;
+        }
+
+        public IEnumerable<InputCommand> ConsumeCommands()
+        {
+            var results = new List<InputCommand>();
+
+            // If we're at the main menu, map keys to menu commands and return them
+            if (_game.CurrentState == GameState.MainMenu)
+            {
+                if (_keyboard.IsKeyPressed(Keys.Up))
+                {
+                    results.Add(new InputCommand(InputType.MenuUp, new SadRogue.Primitives.Point(0, 0)));
+                }
+                else if (_keyboard.IsKeyPressed(Keys.Down))
+                {
+                    results.Add(new InputCommand(InputType.MenuDown, new SadRogue.Primitives.Point(0, 0)));
+                }
+
+                if (_keyboard.IsKeyPressed(Keys.Enter))
+                {
+                    results.Add(new InputCommand(InputType.MenuSelect, new SadRogue.Primitives.Point(0, 0)));
+                }
+
+                if (_keyboard.IsKeyPressed(Keys.Escape))
+                {
+                    results.Add(new InputCommand(InputType.MenuExit, new SadRogue.Primitives.Point(0, 0)));
+                }
+
+                return results;
+            }
+
+            // Pause/unpause is allowed when playing or paused.
+            if (_keyboard.IsKeyPressed(Keys.Escape) && (_game.CurrentState == GameState.Playing || _game.CurrentState == GameState.Paused))
+            {
+                results.Add(new InputCommand(InputType.TogglePause, new SadRogue.Primitives.Point(0, 0)));
+            }
+
+            // Movement only when gameplay input is allowed
+            if (_game.AllowsGameplayInput())
+            {
+                if (_keyboard.IsKeyPressed(Keys.Up))
+                {
+                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, -1)));
+                }
+                else if (_keyboard.IsKeyPressed(Keys.Down))
+                {
+                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, 1)));
+                }
+
+                if (_keyboard.IsKeyPressed(Keys.Left))
+                {
+                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(-1, 0)));
+                }
+                else if (_keyboard.IsKeyPressed(Keys.Right))
+                {
+                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(1, 0)));
+                }
+            }
+
+            return results;
+        }
     }
 }

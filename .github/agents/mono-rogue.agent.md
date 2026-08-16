@@ -16,7 +16,7 @@ Project context:
 - Target framework: net10.0.
 - Main startup and host setup is in Program.cs.
 - Core gameplay state is in MonoRogue.Core/GameMain.cs.
-- Root screen and screen/input flow is in MonoRogue.Screens/RootScreen.cs.
+- Root screen and screen/input flow is in MonoRogue.Core/RootScreen.cs.
 - ECS component definitions are in MonoRogue.Core/Components.cs, and map orchestration is in MonoRogue.Core/Map.cs.
 
 Architecture rules:
