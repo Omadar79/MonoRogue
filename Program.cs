@@ -21,7 +21,12 @@ public static class Program
         Builder.GetBuilder()
                 .ConfigureFonts(true)
                 .SetWindowSizeInCells(GameSettings.GAME_WIDTH, GameSettings.GAME_HEIGHT)
-                .SetStartingScreen(_ => new RootScreen(gameMain))
+                .SetStartingScreen(_ =>
+                {
+                    // create UI mapper from the UI assembly and pass it into the RootScreen
+                    var mapper = new MonoRogue.UI.SadConsoleGlyphMapper();
+                    return new RootScreen(gameMain, mapper);
+                })
                 .IsStartingScreenFocused(true)
                 .Run();
 

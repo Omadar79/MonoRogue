@@ -2,6 +2,8 @@ using SadConsole;
 using Game = SadConsole.Game;
 using SadConsole.Input;
 using Color = SadRogue.Primitives.Color;
+using System.Text.Json;
+using Console = System.Console;
 
 namespace MonoRogue.Core;
 public class RootScreen : ScreenObject
@@ -11,17 +13,22 @@ public class RootScreen : ScreenObject
     private ScreenSurface _pauseOverlay;
     private ScreenSurface _menuOverlay;
     private int _menuSelectedIndex = 0;
-    private readonly string[] _menuOptions = ["New Game", "Exit Game"];
+    private readonly string[] _menuOptions = new[] { "New Game", "Save Map", "Load Map", "Exit Game" };
+    private readonly IGlyphMapper _glyphMapper;
 
-    public RootScreen(GameMain game)
+    public RootScreen(GameMain game, IGlyphMapper glyphMapper)
     {
         _game = game;
-        
+        _glyphMapper = glyphMapper;
+
         UseKeyboard = true;
 
         // Create the main map 
         _map = new MapBase(Game.Instance.ScreenCellsX, Game.Instance.ScreenCellsY - 5);
-        
+
+        // Probe initial player state using the mapper (no-op if none); keeps mapping wired-up for later operations
+        var initialPlayer = _map.ExtractPlayerState(_glyphMapper);
+
         // Ensure the map surface does not steal keyboard focus from this screen
         _map.SurfaceObject.UseKeyboard = false;
         Children.Add(_map.SurfaceObject);
@@ -85,6 +92,41 @@ public class RootScreen : ScreenObject
                     {
                         _game.StartNewGame();
                         _menuOverlay.IsVisible = false;
+                    }
+                    else if (choice == "Save Map")
+                    {
+                        try
+                        {
+                            var mapData = _map.SaveMap(_glyphMapper);
+                            var json = JsonSerializer.Serialize(mapData, new JsonSerializerOptions { WriteIndented = true });
+                            File.WriteAllText("saved_map.json", json);
+                        }
+                        catch (Exception ex)
+                        {
+                            // For now just ignore errors; in future show a message to the user.
+                            Console.WriteLine($"Failed to save map: {ex.Message}");
+                        }
+                        handled = true;
+                    }
+                    else if (choice == "Load Map")
+                    {
+                        try
+                        {
+                            if (File.Exists("saved_map.json"))
+                            {
+                                var json = File.ReadAllText("saved_map.json");
+                                var mapData = JsonSerializer.Deserialize<MapData>(json);
+                                if (mapData != null)
+                                {
+                                    _map.LoadMap(mapData, _glyphMapper);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to load map: {ex.Message}");
+                        }
+                        handled = true;
                     }
                     else if (choice == "Exit Game")
                     {

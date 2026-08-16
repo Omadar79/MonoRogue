@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="MonoRogue.Core/MonoRogue.Core.csproj" />
+  <Project Path="MonoRogue.UI/MonoRogue.UI.csproj" />
+  <Project Path="MyGame.csproj" />
+</Solution>
