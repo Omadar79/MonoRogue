@@ -14,10 +14,8 @@ public class MapBase : IDisposable
 
     private readonly QueryDescription _renderableEntities;
 
-    private Player _player;
-
-    // The surface that represents the map visually
-    private ScreenSurface _mapSurface;
+    private Player _player = null!;
+    private ScreenSurface _mapSurface = null!;
 
     public World World => _world; 
     public ScreenSurface SurfaceObject => _mapSurface; 
@@ -26,18 +24,28 @@ public class MapBase : IDisposable
     {
         _world = World.Create();
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
-
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
+
         _mapSurface = new ScreenSurface(mapWidth, mapHeight);
+
         _mapSurface.UseMouse = false;
+        // Create the player entity and then render the initial surface
+        _player = new Player(_world, this);
+
+        GenerateNewMap();    
+    }
+
+    public void GenerateNewMap()
+    {
+
+        //_world.Clear();
 
         FillBackground();
 
         CreateTreasure();
         CreateMonster();
 
-        // Create the player entity and then render the initial surface
-        _player = new Player(_world, this);
+        
 
         RefreshSurface();
     }
@@ -49,12 +57,11 @@ public class MapBase : IDisposable
         return _player.TryMovePlayer(offset);
     }
 
-   
-   
     public void Dispose()
     {
         _world.Dispose();
     }
+   
   
     private void FillBackground()
     {

@@ -61,6 +61,37 @@ public class RootScreen : ScreenObject
         {
             switch (cmd.Type)
             {
+                case GameMain.InputType.MenuUp:
+                    _menuSelectedIndex = (_menuSelectedIndex - 1 + _menuOptions.Length) % _menuOptions.Length;
+                    DrawMainMenu();
+                    handled = true;
+                    break;
+
+                case GameMain.InputType.MenuDown:
+                    _menuSelectedIndex = (_menuSelectedIndex + 1) % _menuOptions.Length;
+                    DrawMainMenu();
+                    handled = true;
+                    break;
+
+                case GameMain.InputType.MenuSelect:
+                    var choice = _menuOptions[_menuSelectedIndex];
+                    if (choice == "New Game")
+                    {
+                        _game.StartNewGame();
+                        _menuOverlay.IsVisible = false;
+                    }
+                    else if (choice == "Exit Game")
+                    {
+                        Environment.Exit(0);
+                    }
+                    handled = true;
+                    break;
+
+                case GameMain.InputType.MenuExit:
+                    Environment.Exit(0);
+                    handled = true;
+                    break;
+
                 case GameMain.InputType.TogglePause:
                     _game.TogglePause();
 
@@ -79,41 +110,6 @@ public class RootScreen : ScreenObject
                     handled = true;
                     break;
             }
-        }
-
-        // If we're at the main menu, handle menu navigation here
-        if (_game.CurrentState == GameState.MainMenu)
-        {
-            bool handledMenu = false;
-
-            if (keyboard.IsKeyPressed(Keys.Up))
-            {
-                _menuSelectedIndex = (_menuSelectedIndex - 1 + _menuOptions.Length) % _menuOptions.Length;
-                DrawMainMenu();
-                handledMenu = true;
-            }
-            else if (keyboard.IsKeyPressed(Keys.Down))
-            {
-                _menuSelectedIndex = (_menuSelectedIndex + 1) % _menuOptions.Length;
-                DrawMainMenu();
-                handledMenu = true;
-            }
-            else if (keyboard.IsKeyPressed(Keys.Enter))
-            {
-                var choice = _menuOptions[_menuSelectedIndex];
-                if (choice == "New Game")
-                {
-                    _game.StartGame();
-                    _menuOverlay.IsVisible = false;
-                    handledMenu = true;
-                }
-                else if (choice == "Exit Game")
-                {
-                    Environment.Exit(0);
-                }
-            }
-
-            if (handledMenu) return true;
         }
 
         return handled;
