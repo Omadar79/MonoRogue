@@ -5,6 +5,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Disable SDK auto-generation of assembly attributes so we can supply a single AssemblyInfo.cs
+         This prevents duplicate-attribute (CS0579) errors when stale obj/ artifacts exist. -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RootNamespace>MonoRogue</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
@@ -21,6 +24,8 @@
   <!-- Exclude the MonoRogue.Core source files from this project now that they live in their own project -->
   <ItemGroup>
     <Compile Remove="MonoRogue.Core\**\*.cs" />
+    <!-- Also exclude UI sources so they are compiled only by the MonoRogue.UI project -->
+    <Compile Remove="MonoRogue.UI\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

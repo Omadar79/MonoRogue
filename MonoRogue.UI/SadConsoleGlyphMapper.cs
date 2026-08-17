@@ -1,14 +1,16 @@
-namespace MonoRogue.UI;
-
 using MonoRogue.Core;
 using SadConsole;
 using Color = SadRogue.Primitives.Color;
 
+namespace MonoRogue.UI;
 public sealed class SadConsoleGlyphMapper : IGlyphMapper
 {
-    public ColoredGlyph ToColoredGlyph(GlyphDTO glyphDTO)
+    public ColoredGlyph ToColoredGlyph(GlyphDTO? glyphDTO)
     {
-        if (glyphDTO == null) return new ColoredGlyph(Color.White, Color.Black, (char)0);
+        if (glyphDTO == null)
+        {
+            return new ColoredGlyph(Color.White, Color.Black, (char)0);
+        }
 
         var fg = ColorConverter.FromArgb(glyphDTO.ForegroundArgb);
         var bg = ColorConverter.FromArgb(glyphDTO.BackgroundArgb);
@@ -17,7 +19,7 @@ public sealed class SadConsoleGlyphMapper : IGlyphMapper
 
     public GlyphDTO ToGlyphDTO(ColoredGlyph coloredGlyph)
     {
-        if (coloredGlyph.Equals(default(ColoredGlyph)))
+        if (coloredGlyph.Equals(null))
         {
             return new GlyphDTO((char)0, 0, 0);
         }

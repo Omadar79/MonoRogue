@@ -12,9 +12,14 @@ public class RootScreen : ScreenObject
     private MapBase _map;
     private ScreenSurface _pauseOverlay;
     private ScreenSurface _menuOverlay;
+    private ScreenSurface _rightPanel;
+    private ScreenSurface _messageConsole;
     private int _menuSelectedIndex = 0;
-    private readonly string[] _menuOptions = new[] { "New Game", "Save Map", "Load Map", "Exit Game" };
+    private readonly string[] _menuOptions = ["New Game", "Save Map", "Load Map", "Exit Game"];
     private readonly IGlyphMapper _glyphMapper;
+    private readonly List<string> _messages = [];
+    private const int RightPanelWidth = 20;
+    private const int BottomConsoleHeight = 5;
 
     public RootScreen(GameMain game, IGlyphMapper glyphMapper)
     {
@@ -23,8 +28,14 @@ public class RootScreen : ScreenObject
 
         UseKeyboard = true;
 
-        // Create the main map 
-        _map = new MapBase(Game.Instance.ScreenCellsX, Game.Instance.ScreenCellsY - 5);
+        // Layout sizes
+        int totalWidth = Game.Instance.ScreenCellsX;
+        int totalHeight = Game.Instance.ScreenCellsY;
+        int mapWidth = Math.Max(10, totalWidth - RightPanelWidth);
+        int mapHeight = Math.Max(8, totalHeight - BottomConsoleHeight);
+
+        // Create the main map (left area)
+        _map = new MapBase(mapWidth, mapHeight);
 
         // Probe initial player state using the mapper (no-op if none); keeps mapping wired-up for later operations
         var initialPlayer = _map.ExtractPlayerState(_glyphMapper);
@@ -33,8 +44,24 @@ public class RootScreen : ScreenObject
         _map.SurfaceObject.UseKeyboard = false;
         Children.Add(_map.SurfaceObject);
 
+        // Create right-hand panel for player stats/inventory and position it to the right of the map
+        _rightPanel = new ScreenSurface(RightPanelWidth, mapHeight);
+        _rightPanel.UseMouse = false;
+        _rightPanel.UseKeyboard = false;
+        _rightPanel.Position = new SadRogue.Primitives.Point(mapWidth, 0);
+        DrawRightPanel();
+        Children.Add(_rightPanel);
+
+        // Create a bottom message console that spans full width and sits under the map
+        _messageConsole = new ScreenSurface(totalWidth, BottomConsoleHeight);
+        _messageConsole.UseMouse = false;
+        _messageConsole.UseKeyboard = false;
+        _messageConsole.Position = new SadRogue.Primitives.Point(0, mapHeight);
+        DrawMessageConsole();
+        Children.Add(_messageConsole);
+
         // Create a pause overlay that will be shown when the game is paused
-        _pauseOverlay = new ScreenSurface(Game.Instance.ScreenCellsX, Game.Instance.ScreenCellsY);
+        _pauseOverlay = new ScreenSurface(totalWidth, totalHeight);
         _pauseOverlay.UseMouse = false;
         _pauseOverlay.UseKeyboard = false;
         _pauseOverlay.IsVisible = false;
@@ -42,7 +69,7 @@ public class RootScreen : ScreenObject
         Children.Add(_pauseOverlay);
 
         // Create a menu overlay and draw the main menu; it will be visible when GameState == MainMenu
-        _menuOverlay = new ScreenSurface(Game.Instance.ScreenCellsX, Game.Instance.ScreenCellsY);
+        _menuOverlay = new ScreenSurface(totalWidth, totalHeight);
         _menuOverlay.UseMouse = false;
         _menuOverlay.UseKeyboard = false; // RootScreen handles keyboard centrally
         DrawMainMenu();
@@ -97,9 +124,7 @@ public class RootScreen : ScreenObject
                     {
                         try
                         {
-                            var mapData = _map.SaveMap(_glyphMapper);
-                            var json = JsonSerializer.Serialize(mapData, new JsonSerializerOptions { WriteIndented = true });
-                            File.WriteAllText("saved_map.json", json);
+                            MapPersistenceHelpers.SaveToFile(_map, "saved_map.json", _glyphMapper);
                         }
                         catch (Exception ex)
                         {
@@ -112,15 +137,7 @@ public class RootScreen : ScreenObject
                     {
                         try
                         {
-                            if (File.Exists("saved_map.json"))
-                            {
-                                var json = File.ReadAllText("saved_map.json");
-                                var mapData = JsonSerializer.Deserialize<MapData>(json);
-                                if (mapData != null)
-                                {
-                                    _map.LoadMap(mapData, _glyphMapper);
-                                }
-                            }
+                            MapPersistenceHelpers.LoadIntoWorld(_map, "saved_map.json", _glyphMapper);
                         }
                         catch (Exception ex)
                         {
@@ -190,6 +207,93 @@ public class RootScreen : ScreenObject
         }
 
         _pauseOverlay.IsDirty = true;
+    }
+
+    private void DrawRightPanel()
+    {
+        var surface = _rightPanel.Surface;
+        for (int y = 0; y < surface.Height; y++)
+        {
+            for (int x = 0; x < surface.Width; x++)
+            {
+                surface[x, y].Glyph = ' ';
+                surface[x, y].Foreground = Color.White;
+                surface[x, y].Background = Color.Black;
+            }
+        }
+
+        const string stats = "Stats";
+        int sx = Math.Max(0, (surface.Width - stats.Length) / 2);
+        for (int i = 0; i < stats.Length && sx + i < surface.Width; i++)
+        {
+            surface[sx + i, 0].Glyph = stats[i];
+            surface[sx + i, 0].Foreground = Color.Yellow;
+            surface[sx + i, 0].Background = Color.DarkBlue;
+        }
+
+        // Show a simple player state if present
+        var st = _map.ExtractPlayerState(_glyphMapper);
+        var line = 2;
+        if (st != null)
+        {
+            var pos = $"Pos: {st.X},{st.Y}";
+            for (int i = 0; i < pos.Length && i < surface.Width; i++) surface[i, line].Glyph = pos[i];
+            line += 2;
+        }
+
+        const string inv = "Inventory";
+        int ix = Math.Max(0, (surface.Width - inv.Length) / 2);
+        for (int i = 0; i < inv.Length && ix + i < surface.Width; i++)
+        {
+            surface[ix + i, line].Glyph = inv[i];
+            surface[ix + i, line].Foreground = Color.Yellow;
+            surface[ix + i, line].Background = Color.DarkBlue;
+        }
+
+        // Placeholder items
+        var items = new[] { "(empty)" };
+        for (int r = 0; r < items.Length && line + 1 + r < surface.Height; r++)
+        {
+            var s = items[r];
+            for (int c = 0; c < s.Length && c < surface.Width; c++) surface[c, line + 1 + r].Glyph = s[c];
+        }
+
+        _rightPanel.IsDirty = true;
+    }
+
+    private void DrawMessageConsole()
+    {
+        var surface = _messageConsole.Surface;
+        for (int y = 0; y < surface.Height; y++)
+        {
+            for (int x = 0; x < surface.Width; x++)
+            {
+                surface[x, y].Glyph = ' ';
+                surface[x, y].Foreground = Color.White;
+                surface[x, y].Background = Color.Black;
+            }
+        }
+
+        // Render messages from the bottom up
+        int maxLines = surface.Height;
+        int start = Math.Max(0, _messages.Count - maxLines);
+        int row = 0;
+        for (int i = start; i < _messages.Count; i++)
+        {
+            var msg = _messages[i];
+            for (int c = 0; c < msg.Length && c < surface.Width; c++) surface[c, row].Glyph = msg[c];
+            row++;
+        }
+
+        _messageConsole.IsDirty = true;
+    }
+
+    private void AppendMessage(string message)
+    {
+        _messages.Add(message);
+        // keep some reasonable cap
+        if (_messages.Count > 100) _messages.RemoveAt(0);
+        if (_messageConsole != null) DrawMessageConsole();
     }
 
     private void DrawMainMenu()

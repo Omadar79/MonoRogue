@@ -8,14 +8,11 @@ namespace MonoRogue.Core;
 public class MapBase : IDisposable
 {
     private World _world;
-
-    // Query descriptions for filtering entities based on their components
+    
     private readonly QueryDescription _blockingEntities;
-
     private readonly QueryDescription _renderableEntities;
-
-    private Player _player = null!;
-    private ScreenSurface _mapSurface = null!;
+    private readonly Player _player;
+    private readonly ScreenSurface _mapSurface;
 
     public World World => _world; 
     public ScreenSurface SurfaceObject => _mapSurface; 
@@ -80,7 +77,7 @@ public class MapBase : IDisposable
     // Load map data into the current world. This will clear the existing world and recreate entities
     // according to the supplied MapData. Minimal behavior: colors are defaulted and player is recreated
     // if present in the DTO.
-    public void LoadMap(MapData mapData, IGlyphMapper? mapper = null)
+    public void LoadMap(MapData? mapData, IGlyphMapper? mapper = null)
     {
         if (mapData == null) return;
 
@@ -147,7 +144,7 @@ public class MapBase : IDisposable
     }
 
     // Create a player entity in the current world using a PlayerState DTO.
-    public void CreatePlayerFromState(PlayerState state, IGlyphMapper? mapper = null)
+    public void CreatePlayerFromState(PlayerState? state, IGlyphMapper? mapper = null)
     {
         if (state == null) return;
 
@@ -191,15 +188,11 @@ public class MapBase : IDisposable
 
     public void GenerateNewMap()
     {
-
         //_world.Clear();
-
         FillBackground();
 
         CreateTreasure();
         CreateMonster();
-
-        
 
         RefreshSurface();
     }
