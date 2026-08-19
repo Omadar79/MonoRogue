@@ -22,12 +22,7 @@ public class Player
 
         CreatePlayer(_currentMap.SurfaceObject.Surface.Area.Center);
     }
-
-    private void CreatePlayer(Point position)
-    {
-        _world.Create(new Position(position), new RenderGlyph(new ColoredGlyph(Color.White, Color.Black, 2)), new PlayerControlled(), new BlocksMovement());
-    }
-
+    
     public bool TryMovePlayer(Point offset)
     {
         var moved = false;
@@ -50,6 +45,11 @@ public class Player
         }
 
         return moved;
+    }
+    
+    private void CreatePlayer(Point position)
+    {
+        _world.Create(new Position(position), new RenderGlyph(new ColoredGlyph(Color.White, Color.Black, '@')), new PlayerControlled(), new BlocksMovement());
     }
 }
 

@@ -13,17 +13,21 @@ Checklist (what this document provides)
 Purpose and scope
 - Agents should assist developers by making small, well-scoped changes, creating or updating tests, fixing build errors, and suggesting architectural improvements.
 - Avoid large, sweeping refactors unless explicitly requested by the human reviewer.
+- Do not duplicate UI/rendering code in `MyGame`; reference and extend `MonoRogue.UI` instead.
+ - Do not duplicate UI/rendering code in `MyGame`; prefer extending the existing UI types. NOTE: in this checkout there is no separate `MonoRogue.UI` project — UI-related types live under the `MonoRogue.UI` namespace inside `MonoRogue.Core` (see `MonoRogue.Core/IGlyphMapper.cs`, `MonoRogue.Core/SadConsoleGlyphMapper.cs`, `MonoRogue.Core/RootScreen.cs`). If a separate `MonoRogue.UI` project is added later, coordinate with a maintainer.
 - When in doubt, create a clear PR with an explanation and request human review.
 
 Environment and expectations
-- Target framework: .NET (projects use `TargetFramework` set to `net10.0` in this repository). Projects include `MyGame`, `MonoRogue.Core`, and `MonoRogue.UI`.
+- Target framework: .NET (projects use `TargetFramework` set to `net10.0` in this repository). Projects include `MyGame`, `MonoRogue.Core`, and `MonoRogue.UI` (a single unified UI project/assembly).
+ - Target framework: .NET (projects use `TargetFramework` set to `net10.0` in this repository). Projects include `MyGame` and `MonoRogue.Core`. Historically there was a `MonoRogue.UI` project; in this checkout UI code is consolidated into `MonoRogue.Core` under the `MonoRogue.UI` namespace.
 - Tools available on the developer machine: `dotnet` CLI, PowerShell (Windows), and standard Git.
 - Do not assume any files under `bin/` or `obj/` are present — agents should not rely on committed build artifacts.
 
 Repository layout (high-level)
 - `MyGame.csproj` — top-level application project (hosts references to Core and UI)
-- `MonoRogue.Core/` — core gameplay logic, map generation, components
-- `MonoRogue.UI/` — UI layer, SadConsole glyph mapping, rendering glue
+- `MonoRogue.Core/` — core gameplay logic, map generation, and ECS components/systems
+ - `MonoRogue.Core/` — core gameplay logic, map generation, and ECS components/systems. Note: UI-related types currently live here as well (namespace `MonoRogue.UI`). Key files: `MonoRogue.Core/IGlyphMapper.cs`, `MonoRogue.Core/SadConsoleGlyphMapper.cs`, `MonoRogue.Core/SadConsoleInputProvider.cs`, `MonoRogue.Core/RootScreen.cs`.
+ - (No `MonoRogue.UI/` project in this checkout) If you see references to a `MonoRogue.UI` project in generated files (e.g. `preprocessed_MyGame.xml`) that indicates a historical project layout; treat the canonical source as the current folder structure.
 - `Program.cs` — app entry and SadConsole host setup
 
 Development workflow (agent-friendly)
@@ -71,6 +75,7 @@ Only disable SDK generation when you provide a complete assembly attribute set y
 
 Useful scripts
 - `scripts/clean-build.ps1` — convenience script that performs the `bin/` and `obj/` cleanup and rebuild. Use it when you see build issues or after moving the repository.
+ - `scripts/clean-build.ps1` — referenced by this document but not present in the repository root. Use the explicit PowerShell cleanup commands shown above (or create this script if desired). Agents should not assume auxiliary scripts exist unless present in the repo.
 
 CI guidance
 - CI runs should always do a fresh `dotnet restore` and `dotnet build` (no incremental caching of `obj/` unless intentionally configured).
@@ -82,5 +87,9 @@ When to ask for human review
 
 Contact/notes
 - This document is agent-facing; keep it updated when the repository structure or build system changes.
+- Keep UI ownership centralized in `MonoRogue.UI`; avoid reintroducing duplicate UI implementations in `MyGame`.
+ - Keep UI ownership centralized under the `MonoRogue.UI` namespace (currently implemented inside `MonoRogue.Core`); avoid reintroducing duplicate UI implementations in `MyGame`.
+
+Note: this repository currently contains committed build outputs under `bin/Debug/net10.0/` and populated `obj/` folders. Agents should treat these as stale build artifacts, run a clean build (`dotnet clean` / remove `bin`/`obj`) and avoid relying on checked-in binaries.
 - For more developer-facing tips, see `agent.md` (kept for historical notes). The `agent.md` file includes a short troubleshooting section as well.
 

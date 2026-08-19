@@ -3,7 +3,7 @@ using SadConsole;
 using Color = SadRogue.Primitives.Color;
 
 namespace MonoRogue.UI;
-public sealed class SadConsoleGlyphMapper : IGlyphMapper
+public class SadConsoleGlyphMapper : IGlyphMapper
 {
     public ColoredGlyph ToColoredGlyph(GlyphDTO? glyphDTO)
     {

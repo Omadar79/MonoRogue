@@ -1,4 +1,5 @@
 using Arch.Core;
+using MonoRogue.UI;
 using SadConsole;
 using SadRogue.Primitives;
 using Color = SadRogue.Primitives.Color;
@@ -11,8 +12,11 @@ public class MapBase : IDisposable
     
     private readonly QueryDescription _blockingEntities;
     private readonly QueryDescription _renderableEntities;
-    private readonly Player _player;
+    private readonly QueryDescription _monsterActors;
     private readonly ScreenSurface _mapSurface;
+    private const int DefaultEnergyPerTurn = 100;
+    private const int DefaultActionCost = 100;
+    private const int MaxMonsterActionsPerTurn = 4;
 
     public World World => _world; 
     public ScreenSurface SurfaceObject => _mapSurface; 
@@ -22,12 +26,12 @@ public class MapBase : IDisposable
         _world = World.Create();
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
+        _monsterActors = new QueryDescription().WithAll<Position, MonsterControlled, Energy, RenderGlyph>();
 
         _mapSurface = new ScreenSurface(mapWidth, mapHeight);
 
         _mapSurface.UseMouse = false;
-        // Create the player entity and then render the initial surface
-        _player = new Player(_world, this);
+        CreateInitialPlayer();
 
         GenerateNewMap();    
     }
@@ -74,6 +78,11 @@ public class MapBase : IDisposable
         return new MapData(_mapSurface.Surface.Width, _mapSurface.Surface.Height, entities);
     }
 
+    public void Dispose()
+    {
+        _world.Dispose();
+    }
+
     // Load map data into the current world. This will clear the existing world and recreate entities
     // according to the supplied MapData. Minimal behavior: colors are defaulted and player is recreated
     // if present in the DTO.
@@ -108,7 +117,18 @@ public class MapBase : IDisposable
             }
             else if (e.BlocksMovement)
             {
-                _world.Create(pos, glyph, new BlocksMovement());
+                if (e.Glyph.Glyph is 'M' or 'g' or 'D')
+                {
+                    _world.Create(pos,
+                        glyph,
+                        new BlocksMovement(),
+                        new MonsterControlled(),
+                        new Energy { Current = 0, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
+                }
+                else
+                {
+                    _world.Create(pos, glyph, new BlocksMovement());
+                }
             }
             else
             {
@@ -129,7 +149,7 @@ public class MapBase : IDisposable
             if (mapper != null)
             {
                 var g = mapper.ToGlyphDTO(glyph.Value);
-                result = g is not null ? new PlayerState(pos.Value.X, pos.Value.Y, g) : null;
+                result = new PlayerState(pos.Value.X, pos.Value.Y, g);
             }
             else
             {
@@ -143,8 +163,222 @@ public class MapBase : IDisposable
         return result;
     }
 
+    public bool TryMovePlayer(Point offset)
+    {
+        var moved = TryMovePlayerNoRefresh(offset);
+        if (moved)
+        {
+            RefreshSurface();
+        }
+
+        return moved;
+    }
+
+    // Process one gameplay turn in deterministic order: player action -> monster actions -> one refresh.
+    public TurnResult ProcessPlayerTurn(Point playerDelta)
+    {
+        var playerMoved = TryMovePlayerNoRefresh(playerDelta);
+        var monsterActionsExecuted = ProcessMonsters();
+
+        RefreshSurface();
+        return new TurnResult(playerMoved, monsterActionsExecuted);
+    }
+    
+
+    public bool IsValidCell(Point position)
+    {
+        return _mapSurface.IsValidCell(position.X, position.Y);
+    }
+
+    public bool IsBlocked(Point position)
+    {
+        var blocked = false;
+
+        _world.Query(in _blockingEntities, (ref Position otherPosition) =>
+        {
+            if (otherPosition.Value == position)
+            {
+                blocked = true;
+            }
+        });
+
+        return blocked;
+    }
+
+    public void RefreshSurface()
+    {
+        FillBackground();
+
+        _world.Query(in _renderableEntities, (ref Position position, ref RenderGlyph glyph) =>
+        {
+            if (IsValidCell(position.Value))
+            {
+                glyph.Value.CopyAppearanceTo(_mapSurface.Surface[position.Value]);
+            }
+        });
+
+        _mapSurface.IsDirty = true;
+    }
+
+    private bool TryMovePlayerNoRefresh(Point offset)
+    {
+        var moved = false;
+        var playerQuery = new QueryDescription().WithAll<Position, PlayerControlled>();
+        _world.Query(in playerQuery, (ref Position position) =>
+        {
+            var destination = position.Value + offset;
+            if (!IsValidCell(destination) || IsBlocked(destination))
+            {
+                return;
+            }
+
+            position.Value = destination;
+            moved = true;
+        });
+
+        return moved;
+    }
+
+    private int ProcessMonsters()
+    {
+        var playerPosition = GetPlayerPosition();
+        if (playerPosition is null)
+        {
+            return 0;
+        }
+
+        var actionsExecuted = 0;
+        _world.Query(in _monsterActors, (ref Position monsterPosition, ref Energy energy, ref RenderGlyph glyph) =>
+        {
+            if (energy.GainPerTurn <= 0)
+            {
+                return;
+            }
+
+            energy.Current += energy.GainPerTurn;
+
+            var actionsForThisMonster = 0;
+            while (actionsForThisMonster < MaxMonsterActionsPerTurn)
+            {
+                var action = PlanMonsterAction(monsterPosition.Value, playerPosition.Value, glyph.Value, energy);
+                if (action.EnergyCost <= 0 || energy.Current < action.EnergyCost)
+                {
+                    break;
+                }
+
+                if (ExecuteMonsterAction(ref monsterPosition, action, playerPosition.Value))
+                {
+                    actionsExecuted++;
+                }
+
+                energy.Current -= action.EnergyCost;
+                actionsForThisMonster++;
+            }
+        });
+
+        return actionsExecuted;
+    }
+
+    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, ColoredGlyph glyph, Energy energy)
+    {
+        var delta = playerPosition - monsterPosition;
+        var stepX = Math.Sign(delta.X);
+        var stepY = Math.Sign(delta.Y);
+        var distance = Math.Abs(delta.X) + Math.Abs(delta.Y);
+
+        var glyphChar = (char)glyph.Glyph;
+        if (glyphChar == 'D' && distance <= 3)
+        {
+            return new MonsterActionPlan(MonsterActionType.BreathAttack, Point.None, 300);
+        }
+
+        if (stepX != 0)
+        {
+            return new MonsterActionPlan(MonsterActionType.StepTowardPlayer, new Point(stepX, 0), Math.Max(1, energy.ActionCost));
+        }
+
+        if (stepY != 0)
+        {
+            return new MonsterActionPlan(MonsterActionType.StepTowardPlayer, new Point(0, stepY), Math.Max(1, energy.ActionCost));
+        }
+
+        return new MonsterActionPlan(MonsterActionType.Wait, Point.None, Math.Max(1, energy.ActionCost));
+    }
+
+    private bool ExecuteMonsterAction(ref Position monsterPosition, MonsterActionPlan action, Point playerPosition)
+    {
+        switch (action.Type)
+        {
+            case MonsterActionType.StepTowardPlayer:
+            {
+                var candidate = monsterPosition.Value + action.Delta;
+                if (CanMonsterOccupy(candidate, monsterPosition.Value))
+                {
+                    monsterPosition.Value = candidate;
+                    return true;
+                }
+
+                return false;
+            }
+            case MonsterActionType.BreathAttack:
+                // Stub: combat/resistance pipeline will be added later.
+                return IsInBreathRange(monsterPosition.Value, playerPosition, 3);
+            case MonsterActionType.Wait:
+            default:
+                return false;
+        }
+    }
+
+    private static bool IsInBreathRange(Point origin, Point target, int range)
+    {
+        var distance = Math.Abs(origin.X - target.X) + Math.Abs(origin.Y - target.Y);
+        return distance <= range;
+    }
+
+    private Point? GetPlayerPosition()
+    {
+        Point? result = null;
+        var playerQuery = new QueryDescription().WithAll<Position, PlayerControlled>();
+        _world.Query(in playerQuery, (ref Position position) =>
+        {
+            result ??= position.Value;
+        });
+
+        return result;
+    }
+
+    private bool CanMonsterOccupy(Point destination, Point currentPosition)
+    {
+        if (!IsValidCell(destination) || destination == currentPosition)
+        {
+            return false;
+        }
+
+        var blocked = false;
+        _world.Query(in _blockingEntities, (ref Position otherPosition) =>
+        {
+            if (otherPosition.Value == destination)
+            {
+                blocked = true;
+            }
+        });
+
+        return !blocked;
+    }
+
+    private void GenerateNewMap()
+    {
+        //_world.Clear();
+        FillBackground();
+
+        CreateTreasure();
+        CreateGoblin();
+        CreateDragon();
+
+        RefreshSurface();
+    }
     // Create a player entity in the current world using a PlayerState DTO.
-    public void CreatePlayerFromState(PlayerState? state, IGlyphMapper? mapper = null)
+    private void CreatePlayerFromState(PlayerState? state, IGlyphMapper? mapper = null)
     {
         if (state == null) return;
 
@@ -167,7 +401,7 @@ public class MapBase : IDisposable
 
     // Clear the current world. If preservePlayerState is true, player will be extracted and recreated
     // after the world is cleared.
-    public void ClearWorld(bool preservePlayerState = false)
+    private void ClearWorld(bool preservePlayerState = false)
     {
         PlayerState? saved = null;
         if (preservePlayerState)
@@ -186,29 +420,8 @@ public class MapBase : IDisposable
         RefreshSurface();
     }
 
-    public void GenerateNewMap()
-    {
-        //_world.Clear();
-        FillBackground();
 
-        CreateTreasure();
-        CreateMonster();
 
-        RefreshSurface();
-    }
-
-    public bool TryMovePlayer(Point offset)
-    {
-        if (_player == null) return false;
-
-        return _player.TryMovePlayer(offset);
-    }
-
-    public void Dispose()
-    {
-        _world.Dispose();
-    }
-   
   
     private void FillBackground()
     {
@@ -224,8 +437,16 @@ public class MapBase : IDisposable
                                 (x, y, color) => _mapSurface.Surface[x, y].Background = color);
     }
 
+    private void CreateInitialPlayer()
+    {
+        var center = _mapSurface.Surface.Area.Center;
+        _world.Create(new Position(center),
+            new RenderGlyph(new ColoredGlyph(Color.White, Color.Black, '@')),
+            new PlayerControlled(),
+            new BlocksMovement());
+    }
 
-
+    
     private void CreateTreasure()
     {
         for (int i = 0; i < 1000; i++)
@@ -239,7 +460,18 @@ public class MapBase : IDisposable
         }
     }
 
-    private void CreateMonster()
+    private void CreateGoblin()
+    {
+        CreateMonster('g', Color.Red, DefaultEnergyPerTurn, DefaultActionCost);
+    }
+
+    private void CreateDragon()
+    {
+        // Dragon gains energy like a normal actor but can spend more on special actions.
+        CreateMonster('D', Color.OrangeRed, DefaultEnergyPerTurn, DefaultActionCost);
+    }
+
+    private void CreateMonster(int glyphCode, Color foreground, int gainPerTurn, int actionCost)
     {
         for (int i = 0; i < 1000; i++)
         {
@@ -247,45 +479,18 @@ public class MapBase : IDisposable
 
             if (IsBlocked(randomPosition)) continue;
 
-            _world.Create(new Position(randomPosition), new RenderGlyph(new ColoredGlyph(Color.Red, Color.Black, 'M')), new BlocksMovement());
+            _world.Create(new Position(randomPosition),
+                new RenderGlyph(new ColoredGlyph(foreground, Color.Black, glyphCode)),
+                new BlocksMovement(),
+                new MonsterControlled(),
+                new Energy
+                {
+                    Current = 0,
+                    GainPerTurn = Math.Max(1, gainPerTurn),
+                    ActionCost = Math.Max(1, actionCost)
+                });
 
             break;
         }
     }
-
-    public bool IsValidCell(Point position)
-    {
-        return _mapSurface.IsValidCell(position.X, position.Y);
-    }
-
-    public bool IsBlocked(Point position)
-    {
-        var blocked = false;
-
-        _world.Query(in _blockingEntities, (ref Position otherPosition) =>
-            {
-                if (otherPosition.Value == position)
-                {
-                    blocked = true;
-                }
-            });
-
-        return blocked;
-    }
-
-    public void RefreshSurface()
-    {
-        FillBackground();
-
-        _world.Query(in _renderableEntities, (ref Position position, ref RenderGlyph glyph) =>
-            {
-                if (IsValidCell(position.Value))
-                {
-                    glyph.Value.CopyAppearanceTo(_mapSurface.Surface[position.Value]);
-                }
-            });
-
-        _mapSurface.IsDirty = true;
-    }
-
 }

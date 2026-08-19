@@ -1,8 +1,8 @@
+using MonoRogue.UI;
 using SadConsole;
-using Game = SadConsole.Game;
 using SadConsole.Input;
+using Game = SadConsole.Game;
 using Color = SadRogue.Primitives.Color;
-using System.Text.Json;
 using Console = System.Console;
 
 namespace MonoRogue.Core;
@@ -17,9 +17,8 @@ public class RootScreen : ScreenObject
     private int _menuSelectedIndex = 0;
     private readonly string[] _menuOptions = ["New Game", "Save Map", "Load Map", "Exit Game"];
     private readonly IGlyphMapper _glyphMapper;
-    private readonly List<string> _messages = [];
-    private const int RightPanelWidth = 20;
-    private const int BottomConsoleHeight = 5;
+    private readonly List<string> _messages = new List<string>();
+
 
     public RootScreen(GameMain game, IGlyphMapper glyphMapper)
     {
@@ -31,8 +30,8 @@ public class RootScreen : ScreenObject
         // Layout sizes
         int totalWidth = Game.Instance.ScreenCellsX;
         int totalHeight = Game.Instance.ScreenCellsY;
-        int mapWidth = Math.Max(10, totalWidth - RightPanelWidth);
-        int mapHeight = Math.Max(8, totalHeight - BottomConsoleHeight);
+        int mapWidth = Math.Max(10, totalWidth - GameSettings.RIGHT_PANEL_WIDTH);
+        int mapHeight = Math.Max(8, totalHeight - GameSettings.BOTTOM_CONSOLE_HEIGHT);
 
         // Create the main map (left area)
         _map = new MapBase(mapWidth, mapHeight);
@@ -45,15 +44,15 @@ public class RootScreen : ScreenObject
         Children.Add(_map.SurfaceObject);
 
         // Create right-hand panel for player stats/inventory and position it to the right of the map
-        _rightPanel = new ScreenSurface(RightPanelWidth, mapHeight);
+        _rightPanel = new ScreenSurface(GameSettings.RIGHT_PANEL_WIDTH, totalHeight);
         _rightPanel.UseMouse = false;
         _rightPanel.UseKeyboard = false;
         _rightPanel.Position = new SadRogue.Primitives.Point(mapWidth, 0);
         DrawRightPanel();
         Children.Add(_rightPanel);
 
-        // Create a bottom message console that spans full width and sits under the map
-        _messageConsole = new ScreenSurface(totalWidth, BottomConsoleHeight);
+        // Create a bottom message console that spans map width and sits under the map
+        _messageConsole = new ScreenSurface(mapWidth, GameSettings.BOTTOM_CONSOLE_HEIGHT);
         _messageConsole.UseMouse = false;
         _messageConsole.UseKeyboard = false;
         _messageConsole.Position = new SadRogue.Primitives.Point(0, mapHeight);
@@ -171,7 +170,21 @@ public class RootScreen : ScreenObject
                     break;
 
                 case InputType.Move:
-                    _map.TryMovePlayer(cmd.Delta);
+                    var turnResult = _map.ProcessPlayerTurn(cmd.Delta);
+                    var direction = ToDirectionText(cmd.Delta);
+                    if (turnResult.PlayerMoved)
+                    {
+                        AppendMessage($"You move {direction}");
+                    }
+                    else
+                    {
+                        AppendMessage($"You are obstructed from moving {direction}");
+                    }
+
+                    if (turnResult.MonsterActionsExecuted > 0)
+                    {
+                        AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                    }
                     handled = true;
                     break;
             }
@@ -194,6 +207,9 @@ public class RootScreen : ScreenObject
                 surface[x, y].Background = Color.Black;
             }
         }
+
+
+        // Pause overlay: do not draw panel separators here (they are rendered by the right panel and message console)
 
         const string msg = "PAUSED - Press Escape to resume";
         int msgX = Math.Max(0, (surface.Width - msg.Length) / 2);
@@ -222,8 +238,20 @@ public class RootScreen : ScreenObject
             }
         }
 
+        // Draw vertical separator at the left edge of the right panel to separate map and panel
+        for (int y = 0; y < surface.Height; y++)
+        {
+            surface[0, y].Glyph = '|';
+            surface[0, y].Foreground = Color.Gray;
+            surface[0, y].Background = Color.Black;
+        }
+
+        // Keep column 0 reserved for the separator; render panel content starting at column 1.
+        int contentX = 1;
+        int contentWidth = Math.Max(0, surface.Width - contentX);
+
         const string stats = "Stats";
-        int sx = Math.Max(0, (surface.Width - stats.Length) / 2);
+        int sx = contentX + Math.Max(0, (contentWidth - stats.Length) / 2);
         for (int i = 0; i < stats.Length && sx + i < surface.Width; i++)
         {
             surface[sx + i, 0].Glyph = stats[i];
@@ -237,12 +265,12 @@ public class RootScreen : ScreenObject
         if (st != null)
         {
             var pos = $"Pos: {st.X},{st.Y}";
-            for (int i = 0; i < pos.Length && i < surface.Width; i++) surface[i, line].Glyph = pos[i];
+            for (int i = 0; i < pos.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = pos[i];
             line += 2;
         }
 
         const string inv = "Inventory";
-        int ix = Math.Max(0, (surface.Width - inv.Length) / 2);
+        int ix = contentX + Math.Max(0, (contentWidth - inv.Length) / 2);
         for (int i = 0; i < inv.Length && ix + i < surface.Width; i++)
         {
             surface[ix + i, line].Glyph = inv[i];
@@ -255,7 +283,7 @@ public class RootScreen : ScreenObject
         for (int r = 0; r < items.Length && line + 1 + r < surface.Height; r++)
         {
             var s = items[r];
-            for (int c = 0; c < s.Length && c < surface.Width; c++) surface[c, line + 1 + r].Glyph = s[c];
+            for (int c = 0; c < s.Length && c < contentWidth; c++) surface[contentX + c, line + 1 + r].Glyph = s[c];
         }
 
         _rightPanel.IsDirty = true;
@@ -274,15 +302,29 @@ public class RootScreen : ScreenObject
             }
         }
 
-        // Render messages from the bottom up
-        int maxLines = surface.Height;
+        // Draw a horizontal separator at the top of the message console
+        for (int x = 0; x < surface.Width; x++)
+        {
+            surface[x, 0].Glyph = '_';
+            surface[x, 0].Foreground = Color.Gray;
+            surface[x, 0].Background = Color.Black;
+        }
+
+        // Render messages starting at row 1 (below the separator)
+        int maxLines = Math.Max(0, surface.Height - 1);
         int start = Math.Max(0, _messages.Count - maxLines);
-        int row = 0;
+        int row = 1;
+        
         for (int i = start; i < _messages.Count; i++)
         {
             var msg = _messages[i];
-            for (int c = 0; c < msg.Length && c < surface.Width; c++) surface[c, row].Glyph = msg[c];
+            for (int c = 0; c < msg.Length && c < surface.Width; c++)
+            {
+                surface[c, row].Glyph = msg[c];
+            }
             row++;
+            
+            if (row >= surface.Height) break;
         }
 
         _messageConsole.IsDirty = true;
@@ -291,9 +333,34 @@ public class RootScreen : ScreenObject
     private void AppendMessage(string message)
     {
         _messages.Add(message);
+        
         // keep some reasonable cap
-        if (_messages.Count > 100) _messages.RemoveAt(0);
-        if (_messageConsole != null) DrawMessageConsole();
+        if (_messages.Count > 100)
+        {
+            _messages.RemoveAt(0);
+        }
+        DrawMessageConsole();
+    }
+
+    private static string ToDirectionText(SadRogue.Primitives.Point delta)
+    {
+        switch (delta)
+        {
+            case { X: 0, Y: < 0 }:
+                return "north";
+            
+            case { X: 0, Y: > 0 }:
+                return "south";
+            
+            case { X: > 0, Y: 0 }:
+                return "east";
+            
+            case { X: < 0, Y: 0 }:
+                return "west";
+            
+            default:
+                return "that way";
+        }
     }
 
     private void DrawMainMenu()
@@ -341,78 +408,5 @@ public class RootScreen : ScreenObject
         _menuOverlay.IsDirty = true;
     }
 
-    // Adapter that bridges SadConsole keyboard snapshots to the core IInputProvider interface.
-    // This keeps the core free of SadConsole types while allowing the UI to decide how keys
-    // map to domain-level commands (it may consult the game's current state when mapping).
-    private class SadConsoleInputProvider : IInputProvider
-    {
-        private readonly GameMain _game;
-        private readonly Keyboard _keyboard;
-
-        public SadConsoleInputProvider(GameMain game, Keyboard keyboard)
-        {
-            _game = game;
-            _keyboard = keyboard;
-        }
-
-        public IEnumerable<InputCommand> ConsumeCommands()
-        {
-            var results = new List<InputCommand>();
-
-            // If we're at the main menu, map keys to menu commands and return them
-            if (_game.CurrentState == GameState.MainMenu)
-            {
-                if (_keyboard.IsKeyPressed(Keys.Up))
-                {
-                    results.Add(new InputCommand(InputType.MenuUp, new SadRogue.Primitives.Point(0, 0)));
-                }
-                else if (_keyboard.IsKeyPressed(Keys.Down))
-                {
-                    results.Add(new InputCommand(InputType.MenuDown, new SadRogue.Primitives.Point(0, 0)));
-                }
-
-                if (_keyboard.IsKeyPressed(Keys.Enter))
-                {
-                    results.Add(new InputCommand(InputType.MenuSelect, new SadRogue.Primitives.Point(0, 0)));
-                }
-
-                if (_keyboard.IsKeyPressed(Keys.Escape))
-                {
-                    results.Add(new InputCommand(InputType.MenuExit, new SadRogue.Primitives.Point(0, 0)));
-                }
-
-                return results;
-            }
-
-            // Pause/unpause is allowed when playing or paused.
-            if (_keyboard.IsKeyPressed(Keys.Escape) && (_game.CurrentState == GameState.Playing || _game.CurrentState == GameState.Paused))
-            {
-                results.Add(new InputCommand(InputType.TogglePause, new SadRogue.Primitives.Point(0, 0)));
-            }
-
-            // Movement only when gameplay input is allowed
-            if (_game.AllowsGameplayInput())
-            {
-                if (_keyboard.IsKeyPressed(Keys.Up))
-                {
-                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, -1)));
-                }
-                else if (_keyboard.IsKeyPressed(Keys.Down))
-                {
-                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, 1)));
-                }
-
-                if (_keyboard.IsKeyPressed(Keys.Left))
-                {
-                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(-1, 0)));
-                }
-                else if (_keyboard.IsKeyPressed(Keys.Right))
-                {
-                    results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(1, 0)));
-                }
-            }
-
-            return results;
-        }
-    }
+    
 }

@@ -23,37 +23,17 @@ public enum InputType
 }
 
 /// <summary>
-/// A struct that represents a command that the game can process. It is used to decouple the input processing from the game logic.
-/// </summary>
-public readonly struct InputCommand
-{
-    public InputType Type { get; }
-    public SadRogue.Primitives.Point Delta { get; }
-
-    public InputCommand(InputType type, SadRogue.Primitives.Point delta)
-    {
-        Type = type;
-        Delta = delta;
-    }
-}
-
-/// <summary>
 /// Controls the state and logic of the game.  I wanted to seperate the game logic from the SadConsole logic, 
 /// so that the game could be ported to other platforms in the future.
 /// </summary>
 public class GameMain
 {
     /// <summary>
-    /// The current state of the game. 
+    /// The current state of the game.  Start in the Main Menu
     /// </summary>
-    public GameState CurrentState { get; private set; }
+    public GameState CurrentState { get; private set; } = GameState.MainMenu;
 
 
-    public GameMain()
-    {
-        //start the game in the main menu state
-        CurrentState = GameState.MainMenu;
-    }
 
     public void StartNewGame()
     {
@@ -108,8 +88,11 @@ public class GameMain
             {
                 // Menu navigation/selection only valid in the main menu
                 case InputType.MenuUp:
+                
                 case InputType.MenuDown:
+                
                 case InputType.MenuSelect:
+
                 case InputType.MenuExit:
                     if (CurrentState == GameState.MainMenu)
                     {

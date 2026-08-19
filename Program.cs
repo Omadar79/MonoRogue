@@ -1,6 +1,7 @@
 ﻿using SadConsole;
 using SadConsole.Configuration;
 using MonoRogue.Core;
+using MonoRogue.UI;
 
 public static class Program
 {
@@ -8,7 +9,7 @@ public static class Program
     /// The main entry point for the application.
     /// </summary>
     [STAThread]
-    static void Main(string[] args)
+    private static void Main(string[] args)
     {
 
         // Create the game main logic object
@@ -16,7 +17,7 @@ public static class Program
 
 
         // setup the SadConsole game engine and create the main window.
-        Settings.WindowTitle = "My MonoRogue Game";
+        Settings.WindowTitle = "MonoRogue Game";
 
         Builder.GetBuilder()
                 .ConfigureFonts(true)

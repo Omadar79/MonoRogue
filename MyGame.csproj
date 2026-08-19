@@ -20,17 +20,6 @@
     <PackageReference Include="SadConsole.Host.MonoGame" Version="10.10.0" />
     <PackageReference Include="SadConsole.Extended" Version="10.10.0" />
   </ItemGroup>
-
-  <!-- Exclude the MonoRogue.Core source files from this project now that they live in their own project -->
-  <ItemGroup>
-    <Compile Remove="MonoRogue.Core\**\*.cs" />
-    <!-- Also exclude UI sources so they are compiled only by the MonoRogue.UI project -->
-    <Compile Remove="MonoRogue.UI\**\*.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="MonoRogue.Core\MonoRogue.Core.csproj" />
-    <ProjectReference Include="MonoRogue.UI\MonoRogue.UI.csproj" />
-  </ItemGroup>
+  
 
 </Project>
