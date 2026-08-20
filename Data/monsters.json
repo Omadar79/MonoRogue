@@ -1,0 +1,20 @@
+{
+  "monsters": [
+    {
+      "name": "goblin",
+      "glyph": "g",
+      "foregroundArgb": -65536,
+      "backgroundArgb": -16777216,
+      "gainPerTurn": 100,
+      "actionCost": 100
+    },
+    {
+      "name": "dragon",
+      "glyph": "D",
+      "foregroundArgb": -23296,
+      "backgroundArgb": -16777216,
+      "gainPerTurn": 100,
+      "actionCost": 100
+    }
+  ]
+}

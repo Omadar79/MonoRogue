@@ -1,7 +1,6 @@
 ﻿using SadConsole;
 using SadConsole.Configuration;
 using MonoRogue.Core;
-using MonoRogue.UI;
 
 public static class Program
 {
@@ -11,6 +10,13 @@ public static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // Run lightweight in-project verification tests when requested.
+        if (args.Contains("--test-content"))
+        {
+            MonoRogue.Tests.MonsterDataLoaderTests.RunAll();
+            System.Console.WriteLine("Content loader tests passed.");
+            return;
+        }
 
         // Create the game main logic object
         var gameMain = new GameMain();
@@ -25,7 +31,7 @@ public static class Program
                 .SetStartingScreen(_ =>
                 {
                     // create UI mapper from the UI assembly and pass it into the RootScreen
-                    var mapper = new MonoRogue.UI.SadConsoleGlyphMapper();
+                    var mapper = new SadConsoleGlyphMapper();
                     return new RootScreen(gameMain, mapper);
                 })
                 .IsStartingScreenFocused(true)

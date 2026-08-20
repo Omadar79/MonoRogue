@@ -1,4 +1,3 @@
-using MonoRogue.UI;
 using SadConsole;
 using SadConsole.Input;
 using Game = SadConsole.Game;

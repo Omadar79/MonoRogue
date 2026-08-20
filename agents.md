@@ -13,22 +13,20 @@ Checklist (what this document provides)
 Purpose and scope
 - Agents should assist developers by making small, well-scoped changes, creating or updating tests, fixing build errors, and suggesting architectural improvements.
 - Avoid large, sweeping refactors unless explicitly requested by the human reviewer.
-- Do not duplicate UI/rendering code in `MyGame`; reference and extend `MonoRogue.UI` instead.
- - Do not duplicate UI/rendering code in `MyGame`; prefer extending the existing UI types. NOTE: in this checkout there is no separate `MonoRogue.UI` project — UI-related types live under the `MonoRogue.UI` namespace inside `MonoRogue.Core` (see `MonoRogue.Core/IGlyphMapper.cs`, `MonoRogue.Core/SadConsoleGlyphMapper.cs`, `MonoRogue.Core/RootScreen.cs`). If a separate `MonoRogue.UI` project is added later, coordinate with a maintainer.
-- When in doubt, create a clear PR with an explanation and request human review.
+- Keep content data and runtime logic separated: JSON-driven content definitions live in the `MonoRogue.Data` namespace and folder, while gameplay and UI systems remain in `MonoRogue.Core`.
+- There is currently no separate `MonoRogue.UI` project or namespace; UI-related types stay in the core namespace until a dedicated UI layer is introduced intentionally.
 
 Environment and expectations
-- Target framework: .NET (projects use `TargetFramework` set to `net10.0` in this repository). Projects include `MyGame`, `MonoRogue.Core`, and `MonoRogue.UI` (a single unified UI project/assembly).
- - Target framework: .NET (projects use `TargetFramework` set to `net10.0` in this repository). Projects include `MyGame` and `MonoRogue.Core`. Historically there was a `MonoRogue.UI` project; in this checkout UI code is consolidated into `MonoRogue.Core` under the `MonoRogue.UI` namespace.
+- Target framework: .NET (projects use `TargetFramework` set to `net10.0` in this repository). Projects include `MyGame`, `MonoRogue.Core`, and `MonoRogue.Data`.
 - Tools available on the developer machine: `dotnet` CLI, PowerShell (Windows), and standard Git.
 - Do not assume any files under `bin/` or `obj/` are present — agents should not rely on committed build artifacts.
 
 Repository layout (high-level)
-- `MyGame.csproj` — top-level application project (hosts references to Core and UI)
-- `MonoRogue.Core/` — core gameplay logic, map generation, and ECS components/systems
- - `MonoRogue.Core/` — core gameplay logic, map generation, and ECS components/systems. Note: UI-related types currently live here as well (namespace `MonoRogue.UI`). Key files: `MonoRogue.Core/IGlyphMapper.cs`, `MonoRogue.Core/SadConsoleGlyphMapper.cs`, `MonoRogue.Core/SadConsoleInputProvider.cs`, `MonoRogue.Core/RootScreen.cs`.
- - (No `MonoRogue.UI/` project in this checkout) If you see references to a `MonoRogue.UI` project in generated files (e.g. `preprocessed_MyGame.xml`) that indicates a historical project layout; treat the canonical source as the current folder structure.
-- `Program.cs` — app entry and SadConsole host setup
+- `MyGame.csproj` — top-level application project.
+- `MonoRogue.Core/` — core gameplay logic, map generation, ECS, and UI-related types.
+- `MonoRogue.Data/` — JSON-backed content definitions and loader utilities. This folder contains the `MonoRogue.Data` namespace and is responsible for monster/item content definitions, e.g. `Data/monsters.json`, `Data/items.json`, and the generic `ContentLoader` support classes.
+- `Data/` — runtime content folder containing JSON files used by the loaders.
+- `Program.cs` — app entry and SadConsole host setup.
 
 Development workflow (agent-friendly)
 1. Run a full clean build to get a reproducible baseline:
@@ -87,8 +85,8 @@ When to ask for human review
 
 Contact/notes
 - This document is agent-facing; keep it updated when the repository structure or build system changes.
-- Keep UI ownership centralized in `MonoRogue.UI`; avoid reintroducing duplicate UI implementations in `MyGame`.
- - Keep UI ownership centralized under the `MonoRogue.UI` namespace (currently implemented inside `MonoRogue.Core`); avoid reintroducing duplicate UI implementations in `MyGame`.
+- Keep UI ownership centralized in `MonoRogue.Core` until a separate UI layer is intentionally introduced.
+- Keep content-loading code in `MonoRogue.Data`; do not move JSON-driven content definitions into the gameplay layer.
 
 Note: this repository currently contains committed build outputs under `bin/Debug/net10.0/` and populated `obj/` folders. Agents should treat these as stale build artifacts, run a clean build (`dotnet clean` / remove `bin`/`obj`) and avoid relying on checked-in binaries.
 - For more developer-facing tips, see `agent.md` (kept for historical notes). The `agent.md` file includes a short troubleshooting section as well.

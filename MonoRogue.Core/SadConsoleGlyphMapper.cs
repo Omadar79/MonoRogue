@@ -1,8 +1,9 @@
+
 using MonoRogue.Core;
 using SadConsole;
 using Color = SadRogue.Primitives.Color;
 
-namespace MonoRogue.UI;
+namespace MonoRogue.Core;
 public class SadConsoleGlyphMapper : IGlyphMapper
 {
     public ColoredGlyph ToColoredGlyph(GlyphDTO? glyphDTO)

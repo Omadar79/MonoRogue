@@ -1,7 +1,6 @@
 #OS junk files
 [Tt]humbs.db
 *.DS_Store
-app.manifest
 #Output Linux Installer
 Installers/Linux/tmp_deb/
 Installers/Linux/tmp_run/

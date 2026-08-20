@@ -8,6 +8,7 @@
     <!-- Disable SDK auto-generation of assembly attributes so we can supply a single AssemblyInfo.cs
          This prevents duplicate-attribute (CS0579) errors when stale obj/ artifacts exist. -->
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <RootNamespace>MonoRogue</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
@@ -20,6 +21,5 @@
     <PackageReference Include="SadConsole.Host.MonoGame" Version="10.10.0" />
     <PackageReference Include="SadConsole.Extended" Version="10.10.0" />
   </ItemGroup>
-  
 
 </Project>

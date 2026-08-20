@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "name": "potion",
+      "glyph": "!",
+      "foregroundArgb": -16711936,
+      "backgroundArgb": -16777216
+    },
+    {
+      "name": "gold",
+      "glyph": "$",
+      "foregroundArgb": -256,
+      "backgroundArgb": -16777216
+    }
+  ]
+}

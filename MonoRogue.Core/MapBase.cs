@@ -1,5 +1,5 @@
 using Arch.Core;
-using MonoRogue.UI;
+using MonoRogue.Data;
 using SadConsole;
 using SadRogue.Primitives;
 using Color = SadRogue.Primitives.Color;
@@ -372,11 +372,74 @@ public class MapBase : IDisposable
         FillBackground();
 
         CreateTreasure();
-        CreateGoblin();
-        CreateDragon();
+
+        var itemTemplates = ItemDataLoader.LoadDefinitionsFromDefaultSearchPaths(Directory.GetCurrentDirectory());
+        foreach (var template in itemTemplates)
+        {
+            CreateItem(template);
+        }
+
+        var templates = MonsterDataLoader.LoadDefinitionsFromDefaultSearchPaths(Directory.GetCurrentDirectory());
+        if (templates.Count == 0)
+        {
+            CreateGoblin();
+            CreateDragon();
+        }
+        else
+        {
+            foreach (var template in templates)
+            {
+                CreateMonster(template);
+            }
+        }
 
         RefreshSurface();
     }
+
+    private void CreateItem(ItemDefinition definition)
+    {
+        var foreground = ColorConverter.FromArgb(definition.ForegroundArgb);
+        var background = ColorConverter.FromArgb(definition.BackgroundArgb);
+
+        for (int i = 0; i < 1000; i++)
+        {
+            var randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width), Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
+
+            if (IsBlocked(randomPosition)) continue;
+
+            _world.Create(new Position(randomPosition),
+                new RenderGlyph(new ColoredGlyph(foreground, background, definition.Glyph)));
+
+            break;
+        }
+    }
+
+    private void CreateMonster(MonsterDefinition definition)
+    {
+        var foreground = ColorConverter.FromArgb(definition.ForegroundArgb);
+        var background = ColorConverter.FromArgb(definition.BackgroundArgb);
+
+        for (int i = 0; i < 1000; i++)
+        {
+            var randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width), Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
+
+            if (IsBlocked(randomPosition)) continue;
+
+            _world.Create(new Position(randomPosition),
+                new RenderGlyph(new ColoredGlyph(foreground, background, definition.Glyph)),
+                new BlocksMovement(),
+                new MonsterControlled(),
+                new Energy
+                {
+                    Current = 0,
+                    GainPerTurn = Math.Max(1, definition.GainPerTurn),
+                    ActionCost = Math.Max(1, definition.ActionCost)
+                });
+
+            break;
+        }
+    }
+
     // Create a player entity in the current world using a PlayerState DTO.
     private void CreatePlayerFromState(PlayerState? state, IGlyphMapper? mapper = null)
     {
