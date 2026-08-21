@@ -1,3 +1,4 @@
+using Arch.Core;
 using SadRogue.Primitives;
 
 namespace MonoRogue.Core;
@@ -49,6 +50,46 @@ public struct Energy
     public int ActionCost;
 }
 
+public struct Health
+{
+    public int Current;
+    public int Max;
+}
+
+public enum EffectKind
+{
+    Light,
+    Protection,
+    Poison
+}
+
+public struct TimedEffect
+{
+    // Remaining effect lifetime in turn-time units.
+    public int RemainingTime;
+
+    // Pulse cadence in turn-time units; 0 means passive/no pulse.
+    public int TickInterval;
+
+    // Time until the next pulse.
+    public int TimeUntilNextTick;
+}
+
+public struct EffectTarget
+{
+    public Entity Value;
+}
+
+public struct EffectMagnitude
+{
+    public int Value;
+}
+
+public struct EffectType
+{
+    public EffectKind Value;
+}
+
 public enum MonsterActionType
 {
     Wait,
@@ -58,7 +99,13 @@ public enum MonsterActionType
 
 public readonly record struct MonsterActionPlan(MonsterActionType Type, SadRogue.Primitives.Point Delta, int EnergyCost);
 
-public readonly record struct TurnResult(bool PlayerMoved, int MonsterActionsExecuted);
+public readonly record struct TurnResult(
+    bool PlayerMoved,
+    int MonsterActionsExecuted,
+    int EffectTicksProcessed = 0,
+    int EffectsExpired = 0);
+
+public readonly record struct EffectTickResult(int TicksProcessed, int EffectsExpired);
 
 public readonly struct BlocksMovement
 {

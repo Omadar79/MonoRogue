@@ -126,11 +126,12 @@ public class RootScreen : ScreenObject
                         try
                         {
                             MapPersistenceHelpers.SaveToFile(_map, "saved_map.json");
+                            AppendMessage($"Saved map. Active effects: {_map.GetActiveEffectCount()}");
                         }
                         catch (Exception ex)
                         {
-                            // For now just ignore errors; in future show a message to the user.
                             Console.WriteLine($"Failed to save map: {ex.Message}");
+                            AppendMessage("Failed to save map.");
                         }
                         handled = true;
                     }
@@ -138,13 +139,22 @@ public class RootScreen : ScreenObject
                     {
                         try
                         {
-                            MapPersistenceHelpers.LoadIntoWorld(_map, "saved_map.json");
+                            var loaded = MapPersistenceHelpers.LoadIntoWorld(_map, "saved_map.json");
+                            if (!loaded)
+                            {
+                                AppendMessage("No saved map found.");
+                                handled = true;
+                                break;
+                            }
+
                             DrawMap();
                             DrawRightPanel();
+                            AppendMessage($"Loaded map. Restored active effects: {_map.GetActiveEffectCount()}");
                         }
                         catch (Exception ex)
                         {
                             Console.WriteLine($"Failed to load map: {ex.Message}");
+                            AppendMessage("Failed to load map.");
                         }
                         handled = true;
                     }

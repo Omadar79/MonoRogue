@@ -1,6 +1,5 @@
 namespace MonoRogue.Core;
 
-
 public enum GameState
 {
     MainMenu,
