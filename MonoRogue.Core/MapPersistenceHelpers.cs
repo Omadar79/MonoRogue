@@ -13,10 +13,10 @@ public static class MapPersistenceHelpers
     /// <summary>
     /// Serialize a map's DTO to JSON and write it to disk. Throws exceptions on failure.
     /// </summary>
-    public static void SaveToFile(MapBase map, string path, IGlyphMapper? mapper = null)
+    public static void SaveToFile(MapBase map, string path)
     {
         if (map == null) throw new ArgumentNullException(nameof(map));
-        var mapData = map.SaveMap(mapper);
+        var mapData = map.SaveMap();
         var json = JsonSerializer.Serialize(mapData, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(path, json);
     }
@@ -45,7 +45,7 @@ public static class MapPersistenceHelpers
     /// <summary>
     /// Load a map JSON file and populate the supplied MapBase world. Returns true on success.
     /// </summary>
-    public static bool LoadIntoWorld(MapBase map, string path, IGlyphMapper? mapper = null)
+    public static bool LoadIntoWorld(MapBase map, string path)
     {
         ArgumentNullException.ThrowIfNull(map);
         
@@ -55,7 +55,7 @@ public static class MapPersistenceHelpers
             return false;
         }
         
-        map.LoadMap(mapData, mapper);
+        map.LoadMap(mapData);
         return true;
     }
 }

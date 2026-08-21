@@ -1,7 +1,8 @@
 using System.Reflection;
 using Color = SadRogue.Primitives.Color;
 
-namespace MonoRogue.Core;
+namespace MonoRogue.UI;
+
 public static class ColorConverter
 {
     // Convert SadRogue.Primitives.Color to ARGB int using reflection-based fallbacks.
@@ -9,7 +10,7 @@ public static class ColorConverter
     {
         var typeColor = typeof(Color);
 
-        // Try common property names that may exist in different versions
+        // Try common property names that may exist in different versions.
         var packedProp = typeColor.GetProperty("PackedValue", BindingFlags.Public | BindingFlags.Instance);
         if (packedProp != null)
         {
@@ -18,20 +19,19 @@ public static class ColorConverter
             {
                 case uint u:
                     return unchecked((int)u);
-                
+
                 case int i:
                     return i;
-                
+
                 case long l:
                     return unchecked((int)l);
-                
+
                 default:
                     return 0;
-                
             }
         }
 
-        // Try R,G,B,A properties (could be byte, int, float)
+        // Try R,G,B,A properties (could be byte, int, float).
         var propR = typeColor.GetProperty("R");
         var propG = typeColor.GetProperty("G");
         var propB = typeColor.GetProperty("B");
@@ -58,9 +58,9 @@ public static class ColorConverter
             }
         }
 
-        // Try ToArgb method
+        // Try ToArgb method.
         var toArgb = typeColor.GetMethod("ToArgb", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        
+
         if (toArgb != null)
         {
             var val = toArgb.Invoke(color, Array.Empty<object>());
@@ -79,25 +79,24 @@ public static class ColorConverter
         {
             case null:
                 return 0;
-            
+
             case byte b:
                 return b;
-            
+
             case int i:
                 return Math.Clamp(i, 0, 255);
-            
+
             case float f:
                 return (int)Math.Clamp(Math.Round(f * 255f), 0, 255);
-            
+
             case double d:
                 return (int)Math.Clamp(Math.Round(d * 255.0), 0, 255);
-            
+
             case long l:
                 return (int)Math.Clamp(l, 0, 255);
-            
+
             default:
                 return 0;
-            
         }
     }
 
@@ -110,7 +109,7 @@ public static class ColorConverter
         int g = (argb >> 8) & 0xFF;
         int b = argb & 0xFF;
 
-        // Try constructors: Color(byte r, byte g, byte b) or Color(int r,int g,int b)
+        // Try constructors: Color(byte r, byte g, byte b) or Color(int r,int g,int b).
         var constructors = typeColor.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
         foreach (var ctor in constructors)
         {
@@ -121,13 +120,12 @@ public static class ColorConverter
                 {
                     case 3 when pars[0].ParameterType == typeof(byte):
                         return (Color)ctor.Invoke([(byte)r, (byte)g, (byte)b]);
-                    
+
                     case 3 when pars[0].ParameterType == typeof(int):
                         return (Color)ctor.Invoke([r, g, b]);
-                    
+
                     case 4 when pars[0].ParameterType == typeof(byte):
                         return (Color)ctor.Invoke([(byte)r, (byte)g, (byte)b, (byte)a]);
-                    
                 }
             }
             catch (Exception)
@@ -136,7 +134,7 @@ public static class ColorConverter
             }
         }
 
-        // Try static FromArgb method
+        // Try static FromArgb method.
         var fromArgb = typeColor.GetMethod("FromArgb", BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
         if (fromArgb != null)
         {
@@ -144,14 +142,14 @@ public static class ColorConverter
             if (res is Color c) return c;
         }
 
-        // As last resort, try implicit conversion from System.Drawing.Color if available
+        // As last resort, try implicit conversion from System.Drawing.Color if available.
         try
         {
             var sysColorType = Type.GetType("System.Drawing.Color");
             if (sysColorType != null)
             {
                 var sysColor = System.Drawing.Color.FromArgb(a, r, g, b);
-                // Try Color.FromArgb(int) again with packed int from System.Drawing
+                // Try Color.FromArgb(int) again with packed int from System.Drawing.
                 if (fromArgb != null)
                 {
                     var res = fromArgb.Invoke(null, new object[] { sysColor.ToArgb() });
@@ -164,8 +162,7 @@ public static class ColorConverter
             // ignored
         }
 
-        // Fallback: return default white/black combination
+        // Fallback: return default white/black combination.
         return new Color(255, 255, 255);
     }
 }
-

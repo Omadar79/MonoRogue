@@ -1,12 +1,13 @@
 using Arch.Core;
-using SadConsole;
 using SadRogue.Primitives;
-using Color = SadRogue.Primitives.Color;
 
 namespace MonoRogue.Core;
 
 public class Player
 {
+    private const int ArgbWhite = unchecked((int)0xFFFFFFFF);
+    private const int ArgbBlack = unchecked((int)0xFF000000);
+
     private readonly QueryDescription _playerEntities;
 
     private readonly World _world;
@@ -20,7 +21,7 @@ public class Player
 
         _currentMap = currentMap;
 
-        CreatePlayer(_currentMap.SurfaceObject.Surface.Area.Center);
+        CreatePlayer(_currentMap.GetMapCenter());
     }
     
     public bool TryMovePlayer(Point offset)
@@ -39,17 +40,12 @@ public class Player
             moved = true;
         });
 
-        if (moved)
-        {
-            _currentMap.RefreshSurface();
-        }
-
         return moved;
     }
     
     private void CreatePlayer(Point position)
     {
-        _world.Create(new Position(position), new RenderGlyph(new ColoredGlyph(Color.White, Color.Black, '@')), new PlayerControlled(), new BlocksMovement());
+        _world.Create(new Position(position), RenderGlyph.FromArgb('@', ArgbWhite, ArgbBlack), new PlayerControlled(), new BlocksMovement());
     }
 }
 

@@ -1,28 +1,29 @@
+using MonoRogue.Core;
 using SadConsole;
 using SadConsole.Input;
 using Game = SadConsole.Game;
 using Color = SadRogue.Primitives.Color;
 using Console = System.Console;
 
-namespace MonoRogue.Core;
+namespace MonoRogue.UI;
+
 public class RootScreen : ScreenObject
 {
     private GameMain _game;
     private MapBase _map;
+    private ScreenSurface _mapSurface;
     private ScreenSurface _pauseOverlay;
     private ScreenSurface _menuOverlay;
     private ScreenSurface _rightPanel;
     private ScreenSurface _messageConsole;
     private int _menuSelectedIndex = 0;
     private readonly string[] _menuOptions = ["New Game", "Save Map", "Load Map", "Exit Game"];
-    private readonly IGlyphMapper _glyphMapper;
     private readonly List<string> _messages = new List<string>();
 
 
-    public RootScreen(GameMain game, IGlyphMapper glyphMapper)
+    public RootScreen(GameMain game)
     {
         _game = game;
-        _glyphMapper = glyphMapper;
 
         UseKeyboard = true;
 
@@ -34,13 +35,13 @@ public class RootScreen : ScreenObject
 
         // Create the main map (left area)
         _map = new MapBase(mapWidth, mapHeight);
-
-        // Probe initial player state using the mapper (no-op if none); keeps mapping wired-up for later operations
-        var initialPlayer = _map.ExtractPlayerState(_glyphMapper);
+        _mapSurface = new ScreenSurface(mapWidth, mapHeight);
+        _mapSurface.UseMouse = false;
+        _mapSurface.UseKeyboard = false;
+        DrawMap();
 
         // Ensure the map surface does not steal keyboard focus from this screen
-        _map.SurfaceObject.UseKeyboard = false;
-        Children.Add(_map.SurfaceObject);
+        Children.Add(_mapSurface);
 
         // Create right-hand panel for player stats/inventory and position it to the right of the map
         _rightPanel = new ScreenSurface(GameSettings.RIGHT_PANEL_WIDTH, totalHeight);
@@ -117,12 +118,14 @@ public class RootScreen : ScreenObject
                     {
                         _game.StartNewGame();
                         _menuOverlay.IsVisible = false;
+                        DrawMap();
+                        DrawRightPanel();
                     }
                     else if (choice == "Save Map")
                     {
                         try
                         {
-                            MapPersistenceHelpers.SaveToFile(_map, "saved_map.json", _glyphMapper);
+                            MapPersistenceHelpers.SaveToFile(_map, "saved_map.json");
                         }
                         catch (Exception ex)
                         {
@@ -135,7 +138,9 @@ public class RootScreen : ScreenObject
                     {
                         try
                         {
-                            MapPersistenceHelpers.LoadIntoWorld(_map, "saved_map.json", _glyphMapper);
+                            MapPersistenceHelpers.LoadIntoWorld(_map, "saved_map.json");
+                            DrawMap();
+                            DrawRightPanel();
                         }
                         catch (Exception ex)
                         {
@@ -170,6 +175,8 @@ public class RootScreen : ScreenObject
 
                 case InputType.Move:
                     var turnResult = _map.ProcessPlayerTurn(cmd.Delta);
+                    DrawMap();
+                    DrawRightPanel();
                     var direction = ToDirectionText(cmd.Delta);
                     if (turnResult.PlayerMoved)
                     {
@@ -224,6 +231,46 @@ public class RootScreen : ScreenObject
         _pauseOverlay.IsDirty = true;
     }
 
+    private void DrawMap()
+    {
+        var surface = _mapSurface.Surface;
+
+        for (int y = 0; y < surface.Height; y++)
+        {
+            for (int x = 0; x < surface.Width; x++)
+            {
+                surface[x, y].Glyph = ' ';
+                surface[x, y].Foreground = Color.White;
+                surface[x, y].Background = Color.Black;
+            }
+        }
+
+        Color[] colors = new[] { Color.LightGreen, Color.Coral, Color.CornflowerBlue, Color.DarkGreen };
+        float[] colorStops = new[] { 0f, 0.35f, 0.75f, 1f };
+        Algorithms.GradientFill(_mapSurface.FontSize,
+                                surface.Area.Center,
+                                Math.Max(1, surface.Width / 3),
+                                45,
+                                surface.Area,
+                                new SadRogue.Primitives.Gradient(colors, colorStops),
+                                (x, y, color) => surface[x, y].Background = color);
+
+        var mapData = _map.SaveMap();
+        foreach (var entity in mapData.Entities)
+        {
+            if (entity.X < 0 || entity.Y < 0 || entity.X >= surface.Width || entity.Y >= surface.Height)
+            {
+                continue;
+            }
+
+            surface[entity.X, entity.Y].Glyph = entity.Glyph.Glyph;
+            surface[entity.X, entity.Y].Foreground = ColorConverter.FromArgb(entity.Glyph.ForegroundArgb);
+            surface[entity.X, entity.Y].Background = ColorConverter.FromArgb(entity.Glyph.BackgroundArgb);
+        }
+
+        _mapSurface.IsDirty = true;
+    }
+
     private void DrawRightPanel()
     {
         var surface = _rightPanel.Surface;
@@ -259,7 +306,7 @@ public class RootScreen : ScreenObject
         }
 
         // Show a simple player state if present
-        var st = _map.ExtractPlayerState(_glyphMapper);
+        var st = _map.ExtractPlayerState();
         var line = 2;
         if (st != null)
         {
@@ -313,7 +360,7 @@ public class RootScreen : ScreenObject
         int maxLines = Math.Max(0, surface.Height - 1);
         int start = Math.Max(0, _messages.Count - maxLines);
         int row = 1;
-        
+
         for (int i = start; i < _messages.Count; i++)
         {
             var msg = _messages[i];
@@ -322,7 +369,7 @@ public class RootScreen : ScreenObject
                 surface[c, row].Glyph = msg[c];
             }
             row++;
-            
+
             if (row >= surface.Height) break;
         }
 
@@ -332,7 +379,7 @@ public class RootScreen : ScreenObject
     private void AppendMessage(string message)
     {
         _messages.Add(message);
-        
+
         // keep some reasonable cap
         if (_messages.Count > 100)
         {
@@ -347,16 +394,16 @@ public class RootScreen : ScreenObject
         {
             case { X: 0, Y: < 0 }:
                 return "north";
-            
+
             case { X: 0, Y: > 0 }:
                 return "south";
-            
+
             case { X: > 0, Y: 0 }:
                 return "east";
-            
+
             case { X: < 0, Y: 0 }:
                 return "west";
-            
+
             default:
                 return "that way";
         }
@@ -406,6 +453,4 @@ public class RootScreen : ScreenObject
 
         _menuOverlay.IsDirty = true;
     }
-
-    
 }

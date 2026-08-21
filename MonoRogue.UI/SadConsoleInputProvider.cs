@@ -1,7 +1,7 @@
-﻿using SadConsole.Input;
+using MonoRogue.Core;
+using SadConsole.Input;
 
-
-namespace MonoRogue.Core;
+namespace MonoRogue.UI;
 
 // Adapter that bridges SadConsole keyboard snapshots to the core IInputProvider interface.
 // This keeps the core free of SadConsole types while allowing the UI to decide how keys
@@ -18,10 +18,10 @@ public class SadConsoleInputProvider : IInputProvider
     }
 
     public IEnumerable<InputCommand> ConsumeCommands()
-    { 
+    {
         var results = new List<InputCommand>();
 
-        // If we're at the main menu, map keys to menu commands and return them
+        // If we're at the main menu, map keys to menu commands and return them.
         if (_game.CurrentState == GameState.MainMenu)
         {
             if (_keyboard.IsKeyPressed(Keys.Up))
@@ -29,12 +29,12 @@ public class SadConsoleInputProvider : IInputProvider
                 results.Add(new InputCommand(InputType.MenuUp, new SadRogue.Primitives.Point(0, 0)));
             }
             else if (_keyboard.IsKeyPressed(Keys.Down))
-            { 
+            {
                 results.Add(new InputCommand(InputType.MenuDown, new SadRogue.Primitives.Point(0, 0)));
             }
 
             if (_keyboard.IsKeyPressed(Keys.Enter))
-            { 
+            {
                 results.Add(new InputCommand(InputType.MenuSelect, new SadRogue.Primitives.Point(0, 0)));
             }
 
@@ -52,24 +52,24 @@ public class SadConsoleInputProvider : IInputProvider
             results.Add(new InputCommand(InputType.TogglePause, new SadRogue.Primitives.Point(0, 0)));
         }
 
-        // Movement only when gameplay input is allowed
+        // Movement only when gameplay input is allowed.
         if (_game.AllowsGameplayInput())
         {
             if (_keyboard.IsKeyPressed(Keys.Up))
-            { 
+            {
                 results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, -1)));
             }
             else if (_keyboard.IsKeyPressed(Keys.Down))
-            { 
+            {
                 results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, 1)));
             }
 
             if (_keyboard.IsKeyPressed(Keys.Left))
-            { 
+            {
                 results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(-1, 0)));
             }
             else if (_keyboard.IsKeyPressed(Keys.Right))
-            { 
+            {
                 results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(1, 0)));
             }
         }

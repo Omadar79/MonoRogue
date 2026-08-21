@@ -1,81 +1,66 @@
 using Arch.Core;
 using MonoRogue.Data;
-using SadConsole;
 using SadRogue.Primitives;
-using Color = SadRogue.Primitives.Color;
 
 namespace MonoRogue.Core;
 
 public class MapBase : IDisposable
 {
     private World _world;
-    
+
+    private readonly int _mapWidth;
+    private readonly int _mapHeight;
     private readonly QueryDescription _blockingEntities;
     private readonly QueryDescription _renderableEntities;
     private readonly QueryDescription _monsterActors;
-    private readonly ScreenSurface _mapSurface;
     private const int DefaultEnergyPerTurn = 100;
     private const int DefaultActionCost = 100;
     private const int MaxMonsterActionsPerTurn = 4;
+    private const int ArgbBlack = unchecked((int)0xFF000000);
+    private const int ArgbWhite = unchecked((int)0xFFFFFFFF);
+    private const int ArgbRed = unchecked((int)0xFFFF0000);
+    private const int ArgbYellow = unchecked((int)0xFFFFFF00);
+    private const int ArgbOrangeRed = unchecked((int)0xFFFF4500);
 
-    public World World => _world; 
-    public ScreenSurface SurfaceObject => _mapSurface; 
+    public World World => _world;
+    public int Width => _mapWidth;
+    public int Height => _mapHeight;
 
     public MapBase(int mapWidth, int mapHeight)
     {
         _world = World.Create();
+        _mapWidth = mapWidth;
+        _mapHeight = mapHeight;
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
         _monsterActors = new QueryDescription().WithAll<Position, MonsterControlled, Energy, RenderGlyph>();
 
-        _mapSurface = new ScreenSurface(mapWidth, mapHeight);
-
-        _mapSurface.UseMouse = false;
         CreateInitialPlayer();
-
-        GenerateNewMap();    
+        GenerateNewMap();
     }
 
-    // --- Persistence / transfer API (stubs / minimal implementation) ---
     // Save current map data (entities + basic flags) into a UI-agnostic MapData DTO.
-    public MapData SaveMap(IGlyphMapper? mapper = null)
+    public MapData SaveMap()
     {
         var entities = new List<EntityDTO>();
 
-        // Collect blocking positions
         var blockingPositions = new HashSet<Point>();
         _world.Query(in _blockingEntities, (ref Position pos) => { blockingPositions.Add(pos.Value); });
 
-        // Collect player positions
         var playerPositions = new HashSet<Point>();
         var playerQuery = new QueryDescription().WithAll<Position, PlayerControlled>();
         _world.Query(in playerQuery, (ref Position pos) => { playerPositions.Add(pos.Value); });
 
-        // Collect renderable entities
         _world.Query(in _renderableEntities, (ref Position pos, ref RenderGlyph glyph) =>
         {
-            GlyphDTO glyphDTO;
-            if (mapper != null)
-            {
-                glyphDTO = mapper.ToGlyphDTO(glyph.Value);
-            }
-            else
-            {
-                var glyphChar = (char)glyph.Value.Glyph;
-                var fg = glyph.Value.Foreground;
-                var bg = glyph.Value.Background;
-                var fgArgb = ColorConverter.ToArgb(fg);
-                var bgArgb = ColorConverter.ToArgb(bg);
-                glyphDTO = new GlyphDTO(glyphChar, fgArgb, bgArgb);
-            }
+            var glyphDto = new GlyphDTO(glyph.Value.Glyph, glyph.Value.ForegroundArgb, glyph.Value.BackgroundArgb);
 
-            var isBlock = blockingPositions.Contains(pos.Value);
+            var isBlocked = blockingPositions.Contains(pos.Value);
             var isPlayer = playerPositions.Contains(pos.Value);
-
-            entities.Add(new EntityDTO(pos.Value.X, pos.Value.Y, glyphDTO, isBlock, isPlayer));
+            entities.Add(new EntityDTO(pos.Value.X, pos.Value.Y, glyphDto, isBlocked, isPlayer));
         });
 
-        return new MapData(_mapSurface.Surface.Width, _mapSurface.Surface.Height, entities);
+        return new MapData(_mapWidth, _mapHeight, entities);
     }
 
     public void Dispose()
@@ -83,33 +68,21 @@ public class MapBase : IDisposable
         _world.Dispose();
     }
 
-    // Load map data into the current world. This will clear the existing world and recreate entities
-    // according to the supplied MapData. Minimal behavior: colors are defaulted and player is recreated
-    // if present in the DTO.
-    public void LoadMap(MapData? mapData, IGlyphMapper? mapper = null)
+    // Load map data into the current world. This clears and recreates entities from the DTO.
+    public void LoadMap(MapData? mapData)
     {
-        if (mapData == null) return;
+        if (mapData == null)
+        {
+            return;
+        }
 
-        // Dispose old world and create a fresh one.
         _world.Dispose();
         _world = World.Create();
 
-        // Recreate entities from DTO
         foreach (var e in mapData.Entities)
         {
             var pos = new Position(new Point(e.X, e.Y));
-            RenderGlyph glyph;
-            if (mapper != null)
-            {
-                var cg = mapper.ToColoredGlyph(e.Glyph);
-                glyph = new RenderGlyph(cg);
-            }
-            else
-            {
-                var fg = ColorConverter.FromArgb(e.Glyph.ForegroundArgb);
-                var bg = ColorConverter.FromArgb(e.Glyph.BackgroundArgb);
-                glyph = new RenderGlyph(new ColoredGlyph(fg, bg, e.Glyph.Glyph));
-            }
+            var glyph = new RenderGlyph(new CoreGlyph(e.Glyph.Glyph, e.Glyph.ForegroundArgb, e.Glyph.BackgroundArgb));
 
             if (e.IsPlayer)
             {
@@ -135,29 +108,17 @@ public class MapBase : IDisposable
                 _world.Create(pos, glyph);
             }
         }
-
-        RefreshSurface();
     }
 
     // Extract a minimal PlayerState from the world (first found player entity)
-    public PlayerState? ExtractPlayerState(IGlyphMapper? mapper = null)
+    public PlayerState? ExtractPlayerState()
     {
         PlayerState? result = null;
         var q = new QueryDescription().WithAll<Position, PlayerControlled, RenderGlyph>();
         _world.Query(in q, (ref Position pos, ref RenderGlyph glyph) =>
         {
-            if (mapper != null)
-            {
-                var g = mapper.ToGlyphDTO(glyph.Value);
-                result = new PlayerState(pos.Value.X, pos.Value.Y, g);
-            }
-            else
-            {
-                var ch = (char)glyph.Value.Glyph;
-                var fgArgb = ColorConverter.ToArgb(glyph.Value.Foreground);
-                var bgArgb = ColorConverter.ToArgb(glyph.Value.Background);
-                result = new PlayerState(pos.Value.X, pos.Value.Y, new GlyphDTO(ch, fgArgb, bgArgb));
-            }
+            var glyphDto = new GlyphDTO(glyph.Value.Glyph, glyph.Value.ForegroundArgb, glyph.Value.BackgroundArgb);
+            result = new PlayerState(pos.Value.X, pos.Value.Y, glyphDto);
         });
 
         return result;
@@ -165,29 +126,26 @@ public class MapBase : IDisposable
 
     public bool TryMovePlayer(Point offset)
     {
-        var moved = TryMovePlayerNoRefresh(offset);
-        if (moved)
-        {
-            RefreshSurface();
-        }
-
-        return moved;
+        return TryMovePlayerNoRefresh(offset);
     }
 
-    // Process one gameplay turn in deterministic order: player action -> monster actions -> one refresh.
+    // Process one gameplay turn in deterministic order: player action -> monster actions.
     public TurnResult ProcessPlayerTurn(Point playerDelta)
     {
         var playerMoved = TryMovePlayerNoRefresh(playerDelta);
         var monsterActionsExecuted = ProcessMonsters();
 
-        RefreshSurface();
         return new TurnResult(playerMoved, monsterActionsExecuted);
     }
-    
 
     public bool IsValidCell(Point position)
     {
-        return _mapSurface.IsValidCell(position.X, position.Y);
+        return position.X >= 0 && position.Y >= 0 && position.X < _mapWidth && position.Y < _mapHeight;
+    }
+
+    public Point GetMapCenter()
+    {
+        return new Point(_mapWidth / 2, _mapHeight / 2);
     }
 
     public bool IsBlocked(Point position)
@@ -203,21 +161,6 @@ public class MapBase : IDisposable
         });
 
         return blocked;
-    }
-
-    public void RefreshSurface()
-    {
-        FillBackground();
-
-        _world.Query(in _renderableEntities, (ref Position position, ref RenderGlyph glyph) =>
-        {
-            if (IsValidCell(position.Value))
-            {
-                glyph.Value.CopyAppearanceTo(_mapSurface.Surface[position.Value]);
-            }
-        });
-
-        _mapSurface.IsDirty = true;
     }
 
     private bool TryMovePlayerNoRefresh(Point offset)
@@ -279,14 +222,14 @@ public class MapBase : IDisposable
         return actionsExecuted;
     }
 
-    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, ColoredGlyph glyph, Energy energy)
+    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, CoreGlyph glyph, Energy energy)
     {
         var delta = playerPosition - monsterPosition;
         var stepX = Math.Sign(delta.X);
         var stepY = Math.Sign(delta.Y);
         var distance = Math.Abs(delta.X) + Math.Abs(delta.Y);
 
-        var glyphChar = (char)glyph.Glyph;
+        var glyphChar = glyph.Glyph;
         if (glyphChar == 'D' && distance <= 3)
         {
             return new MonsterActionPlan(MonsterActionType.BreathAttack, Point.None, 300);
@@ -368,9 +311,6 @@ public class MapBase : IDisposable
 
     private void GenerateNewMap()
     {
-        //_world.Clear();
-        FillBackground();
-
         CreateTreasure();
 
         var itemTemplates = ItemDataLoader.LoadDefinitionsFromDefaultSearchPaths(Directory.GetCurrentDirectory());
@@ -392,23 +332,21 @@ public class MapBase : IDisposable
                 CreateMonster(template);
             }
         }
-
-        RefreshSurface();
     }
 
     private void CreateItem(ItemDefinition definition)
     {
-        var foreground = ColorConverter.FromArgb(definition.ForegroundArgb);
-        var background = ColorConverter.FromArgb(definition.BackgroundArgb);
-
         for (int i = 0; i < 1000; i++)
         {
-            var randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width), Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
+            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition)) continue;
+            if (IsBlocked(randomPosition))
+            {
+                continue;
+            }
 
             _world.Create(new Position(randomPosition),
-                new RenderGlyph(new ColoredGlyph(foreground, background, definition.Glyph)));
+                RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb));
 
             break;
         }
@@ -416,17 +354,17 @@ public class MapBase : IDisposable
 
     private void CreateMonster(MonsterDefinition definition)
     {
-        var foreground = ColorConverter.FromArgb(definition.ForegroundArgb);
-        var background = ColorConverter.FromArgb(definition.BackgroundArgb);
-
         for (int i = 0; i < 1000; i++)
         {
-            var randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width), Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
+            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition)) continue;
+            if (IsBlocked(randomPosition))
+            {
+                continue;
+            }
 
             _world.Create(new Position(randomPosition),
-                new RenderGlyph(new ColoredGlyph(foreground, background, definition.Glyph)),
+                RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
                 new BlocksMovement(),
                 new MonsterControlled(),
                 new Energy
@@ -441,29 +379,20 @@ public class MapBase : IDisposable
     }
 
     // Create a player entity in the current world using a PlayerState DTO.
-    private void CreatePlayerFromState(PlayerState? state, IGlyphMapper? mapper = null)
+    private void CreatePlayerFromState(PlayerState? state)
     {
-        if (state == null) return;
+        if (state == null)
+        {
+            return;
+        }
 
         var pos = new Position(new Point(state.X, state.Y));
-        RenderGlyph glyph;
-        if (mapper != null)
-        {
-            glyph = new RenderGlyph(mapper.ToColoredGlyph(state.Glyph));
-        }
-        else
-        {
-            var fg = ColorConverter.FromArgb(state.Glyph.ForegroundArgb);
-            var bg = ColorConverter.FromArgb(state.Glyph.BackgroundArgb);
-            glyph = new RenderGlyph(new ColoredGlyph(fg, bg, state.Glyph.Glyph));
-        }
+        var glyph = new RenderGlyph(new CoreGlyph(state.Glyph.Glyph, state.Glyph.ForegroundArgb, state.Glyph.BackgroundArgb));
 
         _world.Create(pos, glyph, new PlayerControlled(), new BlocksMovement());
-        RefreshSurface();
     }
 
-    // Clear the current world. If preservePlayerState is true, player will be extracted and recreated
-    // after the world is cleared.
+    // Clear the current world. If preservePlayerState is true, player will be extracted and recreated after the world is cleared.
     private void ClearWorld(bool preservePlayerState = false)
     {
         PlayerState? saved = null;
@@ -479,71 +408,57 @@ public class MapBase : IDisposable
         {
             CreatePlayerFromState(saved);
         }
-
-        RefreshSurface();
-    }
-
-
-
-  
-    private void FillBackground()
-    {
-        Color[] colors = new[] { Color.LightGreen, Color.Coral, Color.CornflowerBlue, Color.DarkGreen };
-        float[] colorStops = new[] { 0f, 0.35f, 0.75f, 1f };
-
-        Algorithms.GradientFill(_mapSurface.FontSize,
-                                _mapSurface.Surface.Area.Center,
-                                _mapSurface.Surface.Width / 3,
-                                45,
-                                _mapSurface.Surface.Area,
-                                new Gradient(colors, colorStops),
-                                (x, y, color) => _mapSurface.Surface[x, y].Background = color);
     }
 
     private void CreateInitialPlayer()
     {
-        var center = _mapSurface.Surface.Area.Center;
+        var center = new Point(_mapWidth / 2, _mapHeight / 2);
         _world.Create(new Position(center),
-            new RenderGlyph(new ColoredGlyph(Color.White, Color.Black, '@')),
+            RenderGlyph.FromArgb('@', ArgbWhite, ArgbBlack),
             new PlayerControlled(),
             new BlocksMovement());
     }
 
-    
     private void CreateTreasure()
     {
         for (int i = 0; i < 1000; i++)
         {
-            Point randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width), Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
+            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition)) continue;
+            if (IsBlocked(randomPosition))
+            {
+                continue;
+            }
 
-            _world.Create(new Position(randomPosition), new RenderGlyph(new ColoredGlyph(Color.Yellow, Color.Black, 'v')), new BlocksMovement());
+            _world.Create(new Position(randomPosition), RenderGlyph.FromArgb('v', ArgbYellow, ArgbBlack), new BlocksMovement());
             break;
         }
     }
 
     private void CreateGoblin()
     {
-        CreateMonster('g', Color.Red, DefaultEnergyPerTurn, DefaultActionCost);
+        CreateMonster('g', ArgbRed, DefaultEnergyPerTurn, DefaultActionCost);
     }
 
     private void CreateDragon()
     {
         // Dragon gains energy like a normal actor but can spend more on special actions.
-        CreateMonster('D', Color.OrangeRed, DefaultEnergyPerTurn, DefaultActionCost);
+        CreateMonster('D', ArgbOrangeRed, DefaultEnergyPerTurn, DefaultActionCost);
     }
 
-    private void CreateMonster(int glyphCode, Color foreground, int gainPerTurn, int actionCost)
+    private void CreateMonster(int glyphCode, int foregroundArgb, int gainPerTurn, int actionCost)
     {
         for (int i = 0; i < 1000; i++)
         {
-            Point randomPosition = new Point(Game.Instance.Random.Next(0, _mapSurface.Surface.Width),Game.Instance.Random.Next(0, _mapSurface.Surface.Height));
+            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition)) continue;
+            if (IsBlocked(randomPosition))
+            {
+                continue;
+            }
 
             _world.Create(new Position(randomPosition),
-                new RenderGlyph(new ColoredGlyph(foreground, Color.Black, glyphCode)),
+                RenderGlyph.FromArgb((char)glyphCode, foregroundArgb, ArgbBlack),
                 new BlocksMovement(),
                 new MonsterControlled(),
                 new Energy

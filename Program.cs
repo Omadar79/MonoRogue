@@ -1,6 +1,7 @@
 ﻿using SadConsole;
 using SadConsole.Configuration;
 using MonoRogue.Core;
+using MonoRogue.UI;
 
 public static class Program
 {
@@ -30,9 +31,7 @@ public static class Program
                 .SetWindowSizeInCells(GameSettings.GAME_WIDTH, GameSettings.GAME_HEIGHT)
                 .SetStartingScreen(_ =>
                 {
-                    // create UI mapper from the UI assembly and pass it into the RootScreen
-                    var mapper = new SadConsoleGlyphMapper();
-                    return new RootScreen(gameMain, mapper);
+                    return new RootScreen(gameMain);
                 })
                 .IsStartingScreenFocused(true)
                 .Run();

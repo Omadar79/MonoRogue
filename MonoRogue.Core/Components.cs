@@ -1,4 +1,3 @@
-using SadConsole;
 using SadRogue.Primitives;
 
 namespace MonoRogue.Core;
@@ -15,13 +14,20 @@ public struct Position
 
 public struct RenderGlyph
 {
-    public ColoredGlyph Value;
+    public CoreGlyph Value;
 
-    public RenderGlyph(ColoredGlyph value)
+    public RenderGlyph(CoreGlyph value)
     {
         Value = value;
     }
+
+    public static RenderGlyph FromArgb(char glyph, int foregroundArgb, int backgroundArgb)
+    {
+        return new RenderGlyph(new CoreGlyph(glyph, foregroundArgb, backgroundArgb));
+    }
 }
+
+public readonly record struct CoreGlyph(char Glyph, int ForegroundArgb, int BackgroundArgb);
 
 public readonly struct PlayerControlled
 {
