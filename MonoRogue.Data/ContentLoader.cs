@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MonoRogue.Data;
 
@@ -25,7 +26,8 @@ public static class ContentLoader
             var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
-                ReadCommentHandling = JsonCommentHandling.Skip
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                Converters = { new JsonStringEnumConverter() }
             };
 
             var results = new List<T>();

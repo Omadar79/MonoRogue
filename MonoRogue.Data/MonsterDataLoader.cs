@@ -8,10 +8,11 @@ public sealed record MonsterDefinition(
     int ForegroundArgb,
     int BackgroundArgb,
     int GainPerTurn,
-    int ActionCost)
+    int ActionCost,
+    int Damage)
 {
     public static MonsterDefinition Default(string name, char glyph) =>
-        new(name, glyph, unchecked((int)0xFFFF0000), unchecked((int)0xFF000000), 100, 100);
+        new(name, glyph, unchecked((int)0xFFFF0000), unchecked((int)0xFF000000), 100, 100, 3);
 }
 
 public sealed class MonsterDefinitionsFile
@@ -33,7 +34,8 @@ public static class MonsterDataLoader
                 m.ForegroundArgb,
                 m.BackgroundArgb,
                 Math.Max(1, m.GainPerTurn),
-                Math.Max(1, m.ActionCost)))
+                Math.Max(1, m.ActionCost),
+                Math.Max(1, m.Damage)))
             .ToList();
     }
 
@@ -47,7 +49,8 @@ public static class MonsterDataLoader
                 m.ForegroundArgb,
                 m.BackgroundArgb,
                 Math.Max(1, m.GainPerTurn),
-                Math.Max(1, m.ActionCost)))
+                Math.Max(1, m.ActionCost),
+                Math.Max(1, m.Damage)))
             .ToList();
     }
 }

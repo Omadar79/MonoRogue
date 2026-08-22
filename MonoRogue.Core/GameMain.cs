@@ -16,6 +16,7 @@ public enum InputType
     TogglePause,
     Move,
     Rest,
+    UseItem,
     MenuUp,
     MenuDown,
     MenuSelect,
@@ -38,6 +39,11 @@ public class GameMain
     public void StartNewGame()
     {
         CurrentState = GameState.Playing;
+    }
+
+    public void GameOver()
+    {
+        CurrentState = GameState.GameOver;
     }
 
     public bool AllowsGameplayInput()
@@ -111,6 +117,7 @@ public class GameMain
                 // Movement only when gameplay input is allowed
                 case InputType.Move:
                 case InputType.Rest:
+                case InputType.UseItem:
                     if (AllowsGameplayInput())
                     {
                         results.Add(cmd);

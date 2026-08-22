@@ -1,4 +1,5 @@
 using Arch.Core;
+using MonoRogue.Core.Systems;
 using MonoRogue.Data;
 using SadRogue.Primitives;
 
@@ -6,47 +7,59 @@ namespace MonoRogue.Core;
 
 public class MapBase : IDisposable
 {
-    private World _world;
+    private readonly World _world;
 
     private readonly int _mapWidth;
     private readonly int _mapHeight;
+
+    private readonly SpatialMap _spatial;
+    private readonly EnergySystem _energy;
+    private readonly EffectSystem _effects;
+    private readonly CombatSystem _combat;
+    private readonly PlayerActionSystem _playerAction;
+    private readonly MonsterAISystem _monsterAI;
+
+    // Persistence-related queries. Turn systems own their own queries.
     private readonly QueryDescription _blockingEntities;
     private readonly QueryDescription _renderableEntities;
-    private readonly QueryDescription _actorEntities;
+    private readonly QueryDescription _itemEntities;
     private readonly QueryDescription _effectEntities;
-    private readonly QueryDescription _healthEntities;
-    private readonly QueryDescription _playerEntities;
-    private const int DefaultEnergyPerTurn = 100;
-    private const int DefaultActionCost = 100;
-    private const int MaxMonsterActionsPerTurn = 4;
-    private const int TurnTimeQuantum = 100;
-    private const int DefaultPlayerHealth = 20;
-    private const int DefaultMonsterHealth = 8;
-    private const int ArgbBlack = unchecked((int)0xFF000000);
-    private const int ArgbWhite = unchecked((int)0xFFFFFFFF);
-    private const int ArgbRed = unchecked((int)0xFFFF0000);
-    private const int ArgbYellow = unchecked((int)0xFFFFFF00);
-    private const int ArgbOrangeRed = unchecked((int)0xFFFF4500);
+
+    private readonly List<ItemStack> _inventory = new();
 
     public World World => _world;
     public int Width => _mapWidth;
     public int Height => _mapHeight;
+    public IReadOnlyList<ItemStack> Inventory => _inventory;
 
     public MapBase(int mapWidth, int mapHeight)
     {
         _world = World.Create();
         _mapWidth = mapWidth;
         _mapHeight = mapHeight;
+
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
-        _actorEntities = new QueryDescription().WithAll<Position, ActorControlled, Energy, RenderGlyph>();
+        _itemEntities = new QueryDescription().WithAll<Position, Item>();
         _effectEntities = new QueryDescription().WithAll<TimedEffect, EffectType, EffectTarget, EffectMagnitude>();
-        _healthEntities = new QueryDescription().WithAll<Health>();
-        _playerEntities = new QueryDescription().WithAll<ActorControlled>();
+
+        _spatial = new SpatialMap(_world, mapWidth, mapHeight);
+        _energy = new EnergySystem(_world);
+        _effects = new EffectSystem(_world);
+        _combat = new CombatSystem(_world, _effects);
+        _playerAction = new PlayerActionSystem(_world, _spatial);
+        _monsterAI = new MonsterAISystem(_world, _spatial, _combat);
 
         CreateInitialPlayer();
         GenerateNewMap();
     }
+
+    public void Dispose()
+    {
+        _world.Dispose();
+    }
+
+    // ---- Persistence ----
 
     // Save current map data (entities + basic flags) into a UI-agnostic MapData DTO.
     public MapData SaveMap()
@@ -63,6 +76,12 @@ public class MapBase : IDisposable
         var playerQuery = new QueryDescription().WithAll<Position, ActorControlled>();
         _world.Query(in playerQuery, (ref Position pos, ref ActorControlled actor) => { if (actor.Kind == ActorKind.Player) playerPositions.Add(pos.Value); });
 
+        var itemInfo = new Dictionary<Entity, (ItemKind Kind, string Name, int Magnitude)>();
+        _world.Query(in _itemEntities, (Entity entity, ref Item item) =>
+        {
+            itemInfo[entity] = (item.Kind, item.Name, item.Magnitude);
+        });
+
         _world.Query(in _renderableEntities, (Entity entity, ref Position pos, ref RenderGlyph glyph) =>
         {
             var glyphDto = new GlyphDTO(glyph.Value.Glyph, glyph.Value.ForegroundArgb, glyph.Value.BackgroundArgb);
@@ -71,7 +90,18 @@ public class MapBase : IDisposable
             var isPlayer = playerPositions.Contains(pos.Value);
             var savedEntityId = nextSavedEntityId++;
             savedEntityIds[entity] = savedEntityId;
-            entities.Add(new EntityDTO(pos.Value.X, pos.Value.Y, glyphDto, isBlocked, isPlayer, savedEntityId));
+
+            ItemKind? itemKind = null;
+            string? itemName = null;
+            int itemMagnitude = 0;
+            if (itemInfo.TryGetValue(entity, out var info))
+            {
+                itemKind = info.Kind;
+                itemName = info.Name;
+                itemMagnitude = info.Magnitude;
+            }
+
+            entities.Add(new EntityDTO(pos.Value.X, pos.Value.Y, glyphDto, isBlocked, isPlayer, savedEntityId, itemKind, itemName, itemMagnitude));
         });
 
         _world.Query(in _effectEntities, (ref TimedEffect timed, ref EffectType type, ref EffectTarget target, ref EffectMagnitude magnitude) =>
@@ -90,15 +120,12 @@ public class MapBase : IDisposable
                 magnitude.Value));
         });
 
-        return new MapData(_mapWidth, _mapHeight, entities, effects);
+        var inventory = _inventory.Select(s => new ItemStackDTO(s.Name, s.Kind, s.Count, s.Magnitude)).ToList();
+
+        return new MapData(_mapWidth, _mapHeight, entities, effects, Inventory: inventory);
     }
 
-    public void Dispose()
-    {
-        _world.Dispose();
-    }
-
-    // Load map data into the current world. This clears and recreates entities from the DTO.
+    // Load map data into the current world. Clears and recreates entities from the DTO.
     public void LoadMap(MapData? mapData)
     {
         if (mapData == null)
@@ -106,8 +133,7 @@ public class MapBase : IDisposable
             return;
         }
 
-        _world.Dispose();
-        _world = World.Create();
+        _world.Clear();
 
         var loadedEntityBySavedId = new Dictionary<int, Entity>();
 
@@ -124,8 +150,9 @@ public class MapBase : IDisposable
                     glyph,
                     new ActorControlled { Kind = ActorKind.Player },
                     new BlocksMovement(),
-                    new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth },
-                    new Energy { Current = DefaultActionCost, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
+                    new Health { Current = GameConstants.DefaultPlayerHealth, Max = GameConstants.DefaultPlayerHealth },
+                    new Attack { Damage = GameConstants.DefaultPlayerAttack },
+                    new Energy { Current = GameConstants.DefaultActionCost, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
             }
             else if (e.BlocksMovement)
             {
@@ -133,15 +160,25 @@ public class MapBase : IDisposable
                 {
                     createdEntity = _world.Create(pos,
                         glyph,
-                        new Health { Current = DefaultMonsterHealth, Max = DefaultMonsterHealth },
+                        new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
+                        new Attack { Damage = e.Glyph.Glyph == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack },
                         new BlocksMovement(),
-                            new ActorControlled { Kind = ActorKind.Monster },
-                        new Energy { Current = 0, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
+                        new ActorControlled { Kind = ActorKind.Monster },
+                        new Energy { Current = 0, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
                 }
                 else
                 {
                     createdEntity = _world.Create(pos, glyph, new BlocksMovement());
                 }
+            }
+            else if (e.ItemName != null)
+            {
+                createdEntity = _world.Create(pos, glyph, new Item
+                {
+                    Kind = e.ItemKind ?? ItemKind.Gold,
+                    Name = e.ItemName,
+                    Magnitude = Math.Max(1, e.ItemMagnitude)
+                });
             }
             else
             {
@@ -151,6 +188,15 @@ public class MapBase : IDisposable
             if (e.SavedEntityId > 0)
             {
                 loadedEntityBySavedId[e.SavedEntityId] = createdEntity;
+            }
+        }
+
+        _inventory.Clear();
+        if (mapData.Inventory != null)
+        {
+            foreach (var s in mapData.Inventory)
+            {
+                _inventory.Add(new ItemStack(s.Kind, s.Name, s.Count, s.Magnitude));
             }
         }
 
@@ -166,7 +212,7 @@ public class MapBase : IDisposable
                 continue;
             }
 
-            CreateEffect(
+            _effects.CreateEffect(
                 targetEntity,
                 effect.Kind,
                 effect.RemainingTime,
@@ -176,7 +222,21 @@ public class MapBase : IDisposable
         }
     }
 
-    // Extract a minimal PlayerState from the world (first found player entity)
+    // Snapshot of every renderable entity (position + glyph) for the UI to draw.
+    // This is intentionally separate from SaveMap: rendering needs no save IDs,
+    // item info, or effect payloads.
+    public IReadOnlyList<RenderCell> GetRenderSnapshot()
+    {
+        var cells = new List<RenderCell>();
+        _world.Query(in _renderableEntities, (ref Position pos, ref RenderGlyph glyph) =>
+        {
+            cells.Add(new RenderCell(pos.Value.X, pos.Value.Y, glyph.Value));
+        });
+
+        return cells;
+    }
+
+    // Extract a minimal PlayerState from the world (first found player entity).
     public PlayerState? ExtractPlayerState()
     {
         PlayerState? result = null;
@@ -191,25 +251,102 @@ public class MapBase : IDisposable
         return result;
     }
 
+    // ---- Turn orchestration ----
+
+    // Process one gameplay turn in deterministic order: player action -> monster actions -> effects.
+    public TurnResult ProcessPlayerTurn(Point playerDelta)
+    {
+        _energy.AdvanceActorEnergy();
+
+        var playerMoved = false;
+        var playerAttacked = false;
+        var damageDealt = 0;
+        var monsterKilled = false;
+        var itemPickedUp = false;
+        string? itemPickedUpName = null;
+
+        var playerExists = _playerAction.TryGetPlayerEntity(out var playerEntity);
+        var playerPosition = _playerAction.GetPlayerPosition();
+
+        if (playerExists && playerPosition is Point pos)
+        {
+            if (playerDelta != Point.None)
+            {
+                var destination = pos + playerDelta;
+                if (_monsterAI.TryGetMonsterEntityAt(destination, out var monsterEntity))
+                {
+                    // Bump-to-attack: spend an action to strike the monster instead of moving.
+                    if (_energy.TryConsumePlayerEnergy())
+                    {
+                        damageDealt = _combat.ApplyDamage(monsterEntity, _combat.GetAttackDamage(playerEntity, GameConstants.DefaultPlayerAttack));
+                        playerAttacked = damageDealt > 0;
+                        monsterKilled = _combat.IsEntityDead(monsterEntity);
+                    }
+                }
+                else
+                {
+                    playerMoved = _playerAction.TryMovePlayerNoRefresh(playerDelta);
+                    if (playerMoved)
+                    {
+                        itemPickedUpName = TryPickupItemsAt(destination);
+                        itemPickedUp = itemPickedUpName != null;
+                    }
+                }
+            }
+            else
+            {
+                _playerAction.TryMovePlayerNoRefresh(Point.None); // rest
+            }
+        }
+
+        // Remove monsters the player killed so they do not act this turn.
+        _monsterAI.DestroyDeadMonsters();
+
+        var monsterActionsExecuted = ProcessActors();
+        var effectResult = _effects.ProcessEffects(GameConstants.TurnTimeQuantum, _combat.ApplyDamage);
+
+        var playerDied = playerExists && _combat.IsEntityDead(playerEntity);
+
+        return new TurnResult(playerMoved, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired, playerAttacked, damageDealt, monsterKilled, playerDied, itemPickedUp, itemPickedUpName);
+    }
+
+    // Process a "use potion" action as a full turn: heal -> monster actions -> effects.
+    public TurnResult ProcessUsePotion()
+    {
+        _energy.AdvanceActorEnergy();
+
+        var playerExists = _playerAction.TryGetPlayerEntity(out var playerEntity);
+        var potionUsed = false;
+        var healAmount = 0;
+
+        if (playerExists && _energy.TryConsumePlayerEnergy())
+        {
+            var before = GetPlayerHealth().Current;
+            if (TryConsumePotion())
+            {
+                potionUsed = true;
+                healAmount = GetPlayerHealth().Current - before;
+            }
+        }
+
+        var monsterActionsExecuted = ProcessActors();
+        var effectResult = _effects.ProcessEffects(GameConstants.TurnTimeQuantum, _combat.ApplyDamage);
+
+        var playerDied = playerExists && _combat.IsEntityDead(playerEntity);
+
+        return new TurnResult(false, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired, false, 0, false, playerDied, false, null, potionUsed, healAmount);
+    }
+
+    // ---- Player-facing helpers ----
+
     public bool TryMovePlayer(Point offset)
     {
-        return TryMovePlayerNoRefresh(offset);
+        return _playerAction.TryMovePlayerNoRefresh(offset);
     }
 
     public bool TryRestPlayer()
     {
-        return TryMovePlayerNoRefresh(Point.None);
-    }
-
-    // Process one gameplay turn in deterministic order: player action -> monster actions.
-    public TurnResult ProcessPlayerTurn(Point playerDelta)
-    {
-        AdvanceActorEnergy();
-        var playerMoved = TryMovePlayerNoRefresh(playerDelta);
-        var monsterActionsExecuted = ProcessActors();
-        var effectResult = ProcessEffects(TurnTimeQuantum);
-
-        return new TurnResult(playerMoved, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired);
+        return _playerAction.TryMovePlayerNoRefresh(Point.None);
     }
 
     public bool TryApplyPoisonToPlayer(int durationTime, int tickIntervalTime, int damagePerTick)
@@ -229,403 +366,161 @@ public class MapBase : IDisposable
 
     public bool TryApplyEffectToPlayer(EffectKind kind, int durationTime, int tickIntervalTime, int magnitude)
     {
-        if (!TryGetPlayerEntity(out var playerEntity))
+        if (!_playerAction.TryGetPlayerEntity(out var playerEntity))
         {
             return false;
         }
 
-        CreateEffect(playerEntity, kind, durationTime, tickIntervalTime, magnitude);
+        _effects.CreateEffect(playerEntity, kind, durationTime, tickIntervalTime, magnitude);
         return true;
     }
 
+    // ---- Queries ----
+
     public int GetHealthAt(Point position)
     {
-        int? health = null;
-        _world.Query(in _healthEntities, (Entity entity, ref Health value) =>
-        {
-            if (health != null)
-            {
-                return;
-            }
-
-            if (TryGetPosition(entity, out var entityPosition) && entityPosition == position)
-            {
-                health = value.Current;
-            }
-        });
-
-        return health ?? 0;
+        return _combat.GetHealthAt(position);
     }
 
     public int GetActiveEffectCount()
     {
-        var count = 0;
-        _world.Query(in _effectEntities, (ref TimedEffect timed, ref EffectType type, ref EffectTarget target, ref EffectMagnitude magnitude) =>
+        return _effects.GetActiveEffectCount();
+    }
+
+    public (int Current, int Max) GetPlayerHealth()
+    {
+        if (!_playerAction.TryGetPlayerEntity(out var playerEntity))
         {
-            if (timed.RemainingTime > 0)
+            return (0, 0);
+        }
+
+        return _combat.GetHealth(playerEntity);
+    }
+
+    public int GetGold()
+    {
+        return _inventory.Where(s => s.Kind == ItemKind.Gold).Sum(s => s.Count * s.Magnitude);
+    }
+
+    // ---- Inventory ----
+
+    // Pick up all items at the given cell into the player's inventory. Returns the name of the first item picked, or null.
+    public string? TryPickupItemsAt(Point position)
+    {
+        string? firstPickupName = null;
+        var itemEntities = new List<Entity>();
+        _world.Query(in _itemEntities, (Entity entity, ref Position pos, ref Item item) =>
+        {
+            if (pos.Value != position)
             {
-                count++;
+                return;
             }
+
+            firstPickupName ??= item.Name;
+            AddItemToInventory(item.Kind, item.Name, item.Magnitude);
+            itemEntities.Add(entity);
         });
 
-        return count;
+        foreach (var entity in itemEntities)
+        {
+            _world.Destroy(entity);
+        }
+
+        return firstPickupName;
     }
+
+    // Consume one potion from the inventory and heal the player. Returns false if no potion or healing had no effect.
+    public bool TryConsumePotion()
+    {
+        var index = -1;
+        for (var i = 0; i < _inventory.Count; i++)
+        {
+            if (_inventory[i].Kind == ItemKind.Potion && _inventory[i].Count > 0)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            return false;
+        }
+
+        if (!_playerAction.TryGetPlayerEntity(out var playerEntity))
+        {
+            return false;
+        }
+
+        var stack = _inventory[index];
+        if (!_combat.HealEntity(playerEntity, stack.Magnitude))
+        {
+            return false;
+        }
+
+        if (stack.Count <= 1)
+        {
+            _inventory.RemoveAt(index);
+        }
+        else
+        {
+            _inventory[index] = stack with { Count = stack.Count - 1 };
+        }
+
+        return true;
+    }
+
+    // ---- Map geometry ----
 
     public bool IsValidCell(Point position)
     {
-        return position.X >= 0 && position.Y >= 0 && position.X < _mapWidth && position.Y < _mapHeight;
+        return _spatial.IsValidCell(position);
     }
 
     public Point GetMapCenter()
     {
-        return new Point(_mapWidth / 2, _mapHeight / 2);
+        return _spatial.Center;
     }
 
     public bool IsBlocked(Point position)
     {
-        var blocked = false;
-
-        _world.Query(in _blockingEntities, (ref Position otherPosition) =>
-        {
-            if (otherPosition.Value == position)
-            {
-                blocked = true;
-            }
-        });
-
-        return blocked;
+        return _spatial.IsBlocked(position);
     }
 
-    private bool TryMovePlayerNoRefresh(Point offset)
-    {
-        var moved = false;
-        var playerQuery = new QueryDescription().WithAll<Position, ActorControlled, Energy>();
-        _world.Query(in playerQuery, (ref Position position, ref ActorControlled actor, ref Energy energy) =>
-        {
-            if (actor.Kind != ActorKind.Player) return;
-            var actionCost = Math.Max(1, energy.ActionCost);
-            if (energy.Current < actionCost)
-            {
-                return;
-            }
-
-            if (offset == Point.None)
-            {
-                energy.Current -= actionCost;
-                return;
-            }
-
-            var destination = position.Value + offset;
-            if (!IsValidCell(destination) || IsBlocked(destination))
-            {
-                return;
-            }
-
-            position.Value = destination;
-            energy.Current -= actionCost;
-            moved = true;
-        });
-
-        return moved;
-    }
-
-    private void AdvanceActorEnergy()
-    {
-        _world.Query(in _actorEntities, (ref ActorControlled actor, ref Energy energy) =>
-        {
-            if (energy.GainPerTurn <= 0)
-            {
-                return;
-            }
-
-            energy.Current += energy.GainPerTurn;
-        });
-    }
+    // ---- Private helpers ----
 
     private int ProcessActors()
     {
-        var playerPosition = GetPlayerPosition();
+        if (!_playerAction.TryGetPlayerEntity(out var playerEntity))
+        {
+            return 0;
+        }
+
+        var playerPosition = _playerAction.GetPlayerPosition();
         if (playerPosition is null)
         {
             return 0;
         }
 
-        var actionsExecuted = 0;
-        _world.Query(in _actorEntities, (ref Position monsterPosition, ref ActorControlled actor, ref Energy energy, ref RenderGlyph glyph) =>
+        return _monsterAI.ProcessActors(playerPosition.Value, playerEntity);
+    }
+
+    private void AddItemToInventory(ItemKind kind, string name, int magnitude)
+    {
+        for (var i = 0; i < _inventory.Count; i++)
         {
-            if (actor.Kind != ActorKind.Monster) return;
-            var actionsForThisMonster = 0;
-            while (actionsForThisMonster < MaxMonsterActionsPerTurn)
+            var stack = _inventory[i];
+            if (stack.Kind == kind && stack.Name == name)
             {
-                var action = PlanMonsterAction(monsterPosition.Value, playerPosition.Value, glyph.Value, energy);
-                if (action.EnergyCost <= 0 || energy.Current < action.EnergyCost)
-                {
-                    break;
-                }
-
-                if (ExecuteMonsterAction(ref monsterPosition, action, playerPosition.Value))
-                {
-                    actionsExecuted++;
-                }
-
-                energy.Current -= action.EnergyCost;
-                actionsForThisMonster++;
-            }
-        });
-
-        return actionsExecuted;
-    }
-
-    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, CoreGlyph glyph, Energy energy)
-    {
-        var delta = playerPosition - monsterPosition;
-        var stepX = Math.Sign(delta.X);
-        var stepY = Math.Sign(delta.Y);
-        var distance = Math.Abs(delta.X) + Math.Abs(delta.Y);
-
-        var glyphChar = glyph.Glyph;
-        if (glyphChar == 'D' && distance <= 3)
-        {
-            return new MonsterActionPlan(MonsterActionType.BreathAttack, Point.None, 300);
-        }
-
-        if (stepX != 0)
-        {
-            return new MonsterActionPlan(MonsterActionType.StepTowardPlayer, new Point(stepX, 0), Math.Max(1, energy.ActionCost));
-        }
-
-        if (stepY != 0)
-        {
-            return new MonsterActionPlan(MonsterActionType.StepTowardPlayer, new Point(0, stepY), Math.Max(1, energy.ActionCost));
-        }
-
-        return new MonsterActionPlan(MonsterActionType.Wait, Point.None, Math.Max(1, energy.ActionCost));
-    }
-
-    private bool ExecuteMonsterAction(ref Position monsterPosition, MonsterActionPlan action, Point playerPosition)
-    {
-        switch (action.Type)
-        {
-            case MonsterActionType.StepTowardPlayer:
-            {
-                var candidate = monsterPosition.Value + action.Delta;
-                if (CanMonsterOccupy(candidate, monsterPosition.Value))
-                {
-                    monsterPosition.Value = candidate;
-                    return true;
-                }
-
-                return false;
-            }
-            case MonsterActionType.BreathAttack:
-                // Stub: combat/resistance pipeline will be added later.
-                return IsInBreathRange(monsterPosition.Value, playerPosition, 3);
-            case MonsterActionType.Wait:
-            default:
-                return false;
-        }
-    }
-
-    private static bool IsInBreathRange(Point origin, Point target, int range)
-    {
-        var distance = Math.Abs(origin.X - target.X) + Math.Abs(origin.Y - target.Y);
-        return distance <= range;
-    }
-
-    private Point? GetPlayerPosition()
-    {
-        Point? result = null;
-        var playerQuery = new QueryDescription().WithAll<Position, ActorControlled>();
-        _world.Query(in playerQuery, (ref Position position, ref ActorControlled actor) =>
-        {
-            if (actor.Kind != ActorKind.Player) return;
-            result ??= position.Value;
-        });
-
-        return result;
-    }
-
-    private bool CanMonsterOccupy(Point destination, Point currentPosition)
-    {
-        if (!IsValidCell(destination) || destination == currentPosition)
-        {
-            return false;
-        }
-
-        var blocked = false;
-        _world.Query(in _blockingEntities, (ref Position otherPosition) =>
-        {
-            if (otherPosition.Value == destination)
-            {
-                blocked = true;
-            }
-        });
-
-        return !blocked;
-    }
-
-    private EffectTickResult ProcessEffects(int elapsedTime)
-    {
-        if (elapsedTime <= 0)
-        {
-            return new EffectTickResult(0, 0);
-        }
-
-        var ticksProcessed = 0;
-        var expired = new List<Entity>();
-
-        _world.Query(in _effectEntities, (Entity effectEntity, ref TimedEffect timed, ref EffectType effectType, ref EffectTarget target, ref EffectMagnitude magnitude) =>
-        {
-            timed.RemainingTime -= elapsedTime;
-
-            if (timed.TickInterval > 0)
-            {
-                timed.TimeUntilNextTick -= elapsedTime;
-                while (timed.RemainingTime > 0 && timed.TimeUntilNextTick <= 0)
-                {
-                    if (ApplyEffectTick(effectType.Value, target.Value, magnitude.Value))
-                    {
-                        ticksProcessed++;
-                    }
-
-                    timed.TimeUntilNextTick += timed.TickInterval;
-                }
-            }
-
-            if (timed.RemainingTime <= 0)
-            {
-                expired.Add(effectEntity);
-            }
-        });
-
-        foreach (var effectEntity in expired)
-        {
-            _world.Destroy(effectEntity);
-        }
-
-        return new EffectTickResult(ticksProcessed, expired.Count);
-    }
-
-    private bool ApplyEffectTick(EffectKind kind, Entity target, int magnitude)
-    {
-        switch (kind)
-        {
-            case EffectKind.Poison:
-                return ApplyDamage(target, magnitude);
-            case EffectKind.Light:
-            case EffectKind.Protection:
-            default:
-                return false;
-        }
-    }
-
-    private bool ApplyDamage(Entity target, int rawDamage)
-    {
-        var damage = Math.Max(0, rawDamage - GetActiveProtection(target));
-        if (damage <= 0)
-        {
-            return false;
-        }
-
-        var applied = false;
-        _world.Query(in _healthEntities, (Entity entity, ref Health health) =>
-        {
-            if (entity != target)
-            {
+                _inventory[i] = stack with { Count = stack.Count + 1 };
                 return;
             }
-
-            health.Current = Math.Max(0, health.Current - damage);
-            applied = true;
-        });
-
-        return applied;
-    }
-
-    private int GetActiveProtection(Entity target)
-    {
-        var protection = 0;
-        _world.Query(in _effectEntities, (ref TimedEffect timed, ref EffectType effectType, ref EffectTarget effectTarget, ref EffectMagnitude magnitude) =>
-        {
-            if (timed.RemainingTime <= 0)
-            {
-                return;
-            }
-
-            if (effectType.Value != EffectKind.Protection || effectTarget.Value != target)
-            {
-                return;
-            }
-
-            protection += Math.Max(0, magnitude.Value);
-        });
-
-        return protection;
-    }
-
-    private void CreateEffect(Entity target, EffectKind kind, int durationTime, int tickIntervalTime, int magnitude, int? timeUntilNextTickOverride = null)
-    {
-        var safeDuration = Math.Max(1, durationTime);
-        var safeInterval = Math.Max(0, tickIntervalTime);
-        var safeTimeUntilNextTick = safeInterval;
-        if (safeInterval > 0 && timeUntilNextTickOverride.HasValue)
-        {
-            safeTimeUntilNextTick = Math.Max(1, timeUntilNextTickOverride.Value);
-        }
-        else if (safeInterval == 0)
-        {
-            safeTimeUntilNextTick = 0;
         }
 
-        _world.Create(
-            new TimedEffect
-            {
-                RemainingTime = safeDuration,
-                TickInterval = safeInterval,
-                TimeUntilNextTick = safeTimeUntilNextTick
-            },
-            new EffectType { Value = kind },
-            new EffectTarget { Value = target },
-            new EffectMagnitude { Value = Math.Max(0, magnitude) });
+        _inventory.Add(new ItemStack(kind, name, 1, Math.Max(1, magnitude)));
     }
 
-    private bool TryGetPlayerEntity(out Entity playerEntity)
-    {
-        var result = default(Entity);
-        var found = false;
-        _world.Query(in _playerEntities, (Entity entity, ref ActorControlled actor) =>
-        {
-            if (found || actor.Kind != ActorKind.Player)
-            {
-                return;
-            }
-
-            result = entity;
-            found = true;
-        });
-
-        playerEntity = result;
-        return found;
-    }
-
-    private bool TryGetPosition(Entity entity, out Point position)
-    {
-        var result = Point.None;
-        var found = false;
-        _world.Query(in _renderableEntities, (Entity candidate, ref Position value, ref RenderGlyph glyph) =>
-        {
-            if (found || candidate != entity)
-            {
-                return;
-            }
-
-            result = value.Value;
-            found = true;
-        });
-
-        position = result;
-        return found;
-    }
+    // ---- Map generation ----
 
     private void GenerateNewMap()
     {
@@ -658,13 +553,19 @@ public class MapBase : IDisposable
         {
             var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition))
+            if (_spatial.IsBlocked(randomPosition))
             {
                 continue;
             }
 
             _world.Create(new Position(randomPosition),
-                RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb));
+                RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
+                new Item
+                {
+                    Kind = definition.Kind,
+                    Name = definition.Name,
+                    Magnitude = Math.Max(1, definition.Magnitude)
+                });
 
             break;
         }
@@ -676,14 +577,15 @@ public class MapBase : IDisposable
         {
             var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition))
+            if (_spatial.IsBlocked(randomPosition))
             {
                 continue;
             }
 
             _world.Create(new Position(randomPosition),
                 RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
-                new Health { Current = DefaultMonsterHealth, Max = DefaultMonsterHealth },
+                new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
+                new Attack { Damage = Math.Max(1, definition.Damage) },
                 new BlocksMovement(),
                 new ActorControlled { Kind = ActorKind.Monster },
                 new Energy
@@ -697,52 +599,16 @@ public class MapBase : IDisposable
         }
     }
 
-    // Create a player entity in the current world using a PlayerState DTO.
-    private void CreatePlayerFromState(PlayerState? state)
-    {
-        if (state == null)
-        {
-            return;
-        }
-
-        var pos = new Position(new Point(state.X, state.Y));
-        var glyph = new RenderGlyph(new CoreGlyph(state.Glyph.Glyph, state.Glyph.ForegroundArgb, state.Glyph.BackgroundArgb));
-
-        _world.Create(pos,
-            glyph,
-            new ActorControlled { Kind = ActorKind.Player },
-            new BlocksMovement(),
-            new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth },
-            new Energy { Current = DefaultActionCost, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
-    }
-
-    // Clear the current world. If preservePlayerState is true, player will be extracted and recreated after the world is cleared.
-    private void ClearWorld(bool preservePlayerState = false)
-    {
-        PlayerState? saved = null;
-        if (preservePlayerState)
-        {
-            saved = ExtractPlayerState();
-        }
-
-        _world.Dispose();
-        _world = World.Create();
-
-        if (saved != null)
-        {
-            CreatePlayerFromState(saved);
-        }
-    }
-
     private void CreateInitialPlayer()
     {
-        var center = new Point(_mapWidth / 2, _mapHeight / 2);
+        var center = _spatial.Center;
         _world.Create(new Position(center),
-            RenderGlyph.FromArgb('@', ArgbWhite, ArgbBlack),
+            RenderGlyph.FromArgb('@', GameConstants.ArgbWhite, GameConstants.ArgbBlack),
             new ActorControlled { Kind = ActorKind.Player },
             new BlocksMovement(),
-            new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth },
-            new Energy { Current = DefaultActionCost, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
+            new Health { Current = GameConstants.DefaultPlayerHealth, Max = GameConstants.DefaultPlayerHealth },
+            new Attack { Damage = GameConstants.DefaultPlayerAttack },
+            new Energy { Current = GameConstants.DefaultActionCost, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
     }
 
     private void CreateTreasure()
@@ -751,25 +617,25 @@ public class MapBase : IDisposable
         {
             var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition))
+            if (_spatial.IsBlocked(randomPosition))
             {
                 continue;
             }
 
-            _world.Create(new Position(randomPosition), RenderGlyph.FromArgb('v', ArgbYellow, ArgbBlack), new BlocksMovement());
+            _world.Create(new Position(randomPosition), RenderGlyph.FromArgb('v', GameConstants.ArgbYellow, GameConstants.ArgbBlack), new BlocksMovement());
             break;
         }
     }
 
     private void CreateGoblin()
     {
-        CreateMonster('g', ArgbRed, DefaultEnergyPerTurn, DefaultActionCost);
+        CreateMonster('g', GameConstants.ArgbRed, GameConstants.DefaultEnergyPerTurn, GameConstants.DefaultActionCost);
     }
 
     private void CreateDragon()
     {
         // Dragon gains energy like a normal actor but can spend more on special actions.
-        CreateMonster('D', ArgbOrangeRed, DefaultEnergyPerTurn, DefaultActionCost);
+        CreateMonster('D', GameConstants.ArgbOrangeRed, GameConstants.DefaultEnergyPerTurn, GameConstants.DefaultActionCost);
     }
 
     private void CreateMonster(int glyphCode, int foregroundArgb, int gainPerTurn, int actionCost)
@@ -778,14 +644,15 @@ public class MapBase : IDisposable
         {
             var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
 
-            if (IsBlocked(randomPosition))
+            if (_spatial.IsBlocked(randomPosition))
             {
                 continue;
             }
 
             _world.Create(new Position(randomPosition),
-                RenderGlyph.FromArgb((char)glyphCode, foregroundArgb, ArgbBlack),
-                new Health { Current = DefaultMonsterHealth, Max = DefaultMonsterHealth },
+                RenderGlyph.FromArgb((char)glyphCode, foregroundArgb, GameConstants.ArgbBlack),
+                new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
+                new Attack { Damage = glyphCode == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack },
                 new BlocksMovement(),
                 new ActorControlled { Kind = ActorKind.Monster },
                 new Energy

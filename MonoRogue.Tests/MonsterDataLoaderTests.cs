@@ -14,6 +14,10 @@ public static class MonsterDataLoaderTests
         Player_CanBeTreatedAsEntity();
         Player_CanActRepeatedlyWhilePoisoned();
         Player_CanRestAndContinueActingWhilePoisoned();
+        Player_CanAttackAndKillMonsterByBumpingIntoIt();
+        Monster_MeleeAttackDamagesPlayer();
+        Player_CanPickUpItemByWalkingOntoIt();
+        Player_CanUsePotionToHeal();
     }
 
     public static void LoadDefinitions_FromJsonFile_ReturnsMonsterDefinitions()
@@ -31,7 +35,8 @@ public static class MonsterDataLoaderTests
               "foregroundArgb": -65536,
               "backgroundArgb": -16777216,
               "gainPerTurn": 100,
-              "actionCost": 100
+              "actionCost": 100,
+              "damage": 3
             }
           ]
         }
@@ -48,6 +53,7 @@ public static class MonsterDataLoaderTests
         if (definitions[0].Glyph != 'g') throw new InvalidOperationException("Expected goblin glyph.");
         if (definitions[0].GainPerTurn != 100) throw new InvalidOperationException("Expected gainPerTurn of 100.");
         if (definitions[0].ActionCost != 100) throw new InvalidOperationException("Expected actionCost of 100.");
+        if (definitions[0].Damage != 3) throw new InvalidOperationException("Expected damage of 3.");
     }
 
     public static void LoadItemDefinitions_FromJsonFile_ReturnsItemDefinitions()
@@ -63,7 +69,9 @@ public static class MonsterDataLoaderTests
       "name": "potion",
       "glyph": "!",
       "foregroundArgb": -16711936,
-      "backgroundArgb": -16777216
+      "backgroundArgb": -16777216,
+      "kind": "Potion",
+      "magnitude": 8
     }
   ]
 }
@@ -80,6 +88,8 @@ public static class MonsterDataLoaderTests
         if (definitions[0].Glyph != '!') throw new InvalidOperationException("Expected potion glyph.");
         if (definitions[0].ForegroundArgb != -16711936) throw new InvalidOperationException("Expected green foreground.");
         if (definitions[0].BackgroundArgb != -16777216) throw new InvalidOperationException("Expected black background.");
+        if (definitions[0].Kind != ItemKind.Potion) throw new InvalidOperationException("Expected potion kind.");
+        if (definitions[0].Magnitude != 8) throw new InvalidOperationException("Expected magnitude of 8.");
     }
 
     public static void Player_CanBeTreatedAsEntity()
@@ -176,6 +186,155 @@ public static class MonsterDataLoaderTests
         {
             throw new InvalidOperationException("Expected poison effect to remain active after resting and moving.");
         }
+    }
+
+    public static void Player_CanAttackAndKillMonsterByBumpingIntoIt()
+    {
+        using var map = new MapBase(10, 10);
+        var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
+        var target = new Point(start.X + 1, start.Y);
+
+        ClearBlockingEntities(map, new HashSet<Point> { target });
+        SpawnMonster(map, target, health: 1, damage: 3);
+
+        var turnResult = map.ProcessPlayerTurn(new Point(1, 0));
+
+        if (!turnResult.PlayerAttacked)
+        {
+            throw new InvalidOperationException("Expected player to attack an adjacent monster.");
+        }
+
+        if (!turnResult.MonsterKilled)
+        {
+            throw new InvalidOperationException("Expected the adjacent monster to be killed by the attack.");
+        }
+
+        if (turnResult.PlayerMoved)
+        {
+            throw new InvalidOperationException("Player should not move when attacking a monster.");
+        }
+
+        if (turnResult.PlayerDied)
+        {
+            throw new InvalidOperationException("Player should not die when killing a 1-health monster.");
+        }
+    }
+
+    public static void Monster_MeleeAttackDamagesPlayer()
+    {
+        using var map = new MapBase(10, 10);
+        var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
+        var target = new Point(start.X + 1, start.Y);
+
+        ClearBlockingEntities(map, new HashSet<Point> { target });
+        SpawnMonster(map, target, health: 8, damage: 3);
+
+        var healthBefore = map.GetHealthAt(new Point(start.X, start.Y));
+        map.ProcessPlayerTurn(Point.None); // rest; the adjacent monster should melee
+
+        var healthAfter = map.GetHealthAt(new Point(start.X, start.Y));
+
+        if (healthAfter >= healthBefore)
+        {
+            throw new InvalidOperationException($"Expected player health to drop after adjacent monster melee, but went from {healthBefore} to {healthAfter}.");
+        }
+    }
+
+    public static void Player_CanPickUpItemByWalkingOntoIt()
+    {
+        using var map = new MapBase(10, 10);
+        ClearAllExceptPlayer(map);
+
+        var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
+        var target = new Point(start.X + 1, start.Y);
+        SpawnItem(map, target, ItemKind.Potion, "potion", 8);
+
+        var turnResult = map.ProcessPlayerTurn(new Point(1, 0));
+
+        if (!turnResult.PlayerMoved) throw new InvalidOperationException("Expected player to move onto the item.");
+        if (!turnResult.ItemPickedUp) throw new InvalidOperationException("Expected to pick up the item.");
+        if (turnResult.ItemPickedUpName != "potion") throw new InvalidOperationException("Expected potion pickup name.");
+
+        var potionCount = map.Inventory.Count(i => i.Kind == ItemKind.Potion);
+        if (potionCount != 1) throw new InvalidOperationException($"Expected 1 potion in inventory but got {potionCount}.");
+    }
+
+    public static void Player_CanUsePotionToHeal()
+    {
+        using var map = new MapBase(10, 10);
+        ClearAllExceptPlayer(map);
+
+        // Lower the player's health deterministically.
+        var query = new QueryDescription().WithAll<ActorControlled, Health>();
+        map.World.Query(in query, (ref ActorControlled actor, ref Health health) =>
+        {
+            if (actor.Kind == ActorKind.Player)
+            {
+                health.Current = 5;
+            }
+        });
+
+        if (map.TryConsumePotion()) throw new InvalidOperationException("Expected no potion to be available yet.");
+
+        var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
+        var target = new Point(start.X + 1, start.Y);
+        SpawnItem(map, target, ItemKind.Potion, "potion", 8);
+
+        var pickup = map.ProcessPlayerTurn(new Point(1, 0));
+        if (!pickup.ItemPickedUp) throw new InvalidOperationException("Expected to pick up the potion.");
+
+        var healthBefore = map.GetPlayerHealth().Current;
+        if (healthBefore != 5) throw new InvalidOperationException($"Expected health 5 before healing but got {healthBefore}.");
+
+        if (!map.TryConsumePotion()) throw new InvalidOperationException("Expected to consume the potion.");
+
+        var healthAfter = map.GetPlayerHealth().Current;
+        if (healthAfter != 13) throw new InvalidOperationException($"Expected health 13 after healing but got {healthAfter}.");
+
+        var remaining = map.Inventory.Count(i => i.Kind == ItemKind.Potion);
+        if (remaining != 0) throw new InvalidOperationException($"Expected 0 potions remaining but got {remaining}.");
+    }
+
+    private static void SpawnItem(MapBase map, Point position, ItemKind kind, string name, int magnitude)
+    {
+        map.World.Create(
+            new Position(position),
+            RenderGlyph.FromArgb('!', unchecked((int)0xFF00FF00), unchecked((int)0xFF000000)),
+            new Item { Kind = kind, Name = name, Magnitude = magnitude });
+    }
+
+    private static void ClearAllExceptPlayer(MapBase map)
+    {
+        var toDestroy = new HashSet<Entity>();
+
+        var actorQuery = new QueryDescription().WithAll<ActorControlled>();
+        map.World.Query(in actorQuery, (Entity entity, ref ActorControlled actor) =>
+        {
+            if (actor.Kind == ActorKind.Monster) toDestroy.Add(entity);
+        });
+
+        var renderQuery = new QueryDescription().WithAll<Position, RenderGlyph>();
+        map.World.Query(in renderQuery, (Entity entity, ref RenderGlyph glyph) =>
+        {
+            if (glyph.Value.Glyph != '@') toDestroy.Add(entity);
+        });
+
+        foreach (var entity in toDestroy)
+        {
+            map.World.Destroy(entity);
+        }
+    }
+
+    private static void SpawnMonster(MapBase map, Point position, int health, int damage)
+    {
+        map.World.Create(
+            new Position(position),
+            RenderGlyph.FromArgb('g', unchecked((int)0xFFFF0000), unchecked((int)0xFF000000)),
+            new Health { Current = health, Max = health },
+            new BlocksMovement(),
+            new ActorControlled { Kind = ActorKind.Monster },
+            new Energy { Current = 0, GainPerTurn = 100, ActionCost = 100 },
+            new Attack { Damage = damage });
     }
 
     private static void ClearBlockingEntities(MapBase map, HashSet<Point> positions)

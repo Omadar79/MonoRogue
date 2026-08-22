@@ -6,7 +6,8 @@
       "foregroundArgb": -65536,
       "backgroundArgb": -16777216,
       "gainPerTurn": 100,
-      "actionCost": 100
+      "actionCost": 100,
+      "damage": 3
     },
     {
       "name": "dragon",
@@ -14,7 +15,8 @@
       "foregroundArgb": -23296,
       "backgroundArgb": -16777216,
       "gainPerTurn": 100,
-      "actionCost": 100
+      "actionCost": 100,
+      "damage": 5
     }
   ]
 }

@@ -16,6 +16,7 @@ public class RootScreen : ScreenObject
     private ScreenSurface _menuOverlay;
     private ScreenSurface _rightPanel;
     private ScreenSurface _messageConsole;
+    private ScreenSurface _gameOverOverlay;
     private int _menuSelectedIndex = 0;
     private readonly string[] _menuOptions = ["New Game", "Save Map", "Load Map", "Exit Game"];
     private readonly List<string> _messages = new List<string>();
@@ -66,6 +67,14 @@ public class RootScreen : ScreenObject
         _pauseOverlay.IsVisible = false;
         DrawPauseMessage();
         Children.Add(_pauseOverlay);
+
+        // Create a game-over overlay that will be shown when the player dies
+        _gameOverOverlay = new ScreenSurface(totalWidth, totalHeight);
+        _gameOverOverlay.UseMouse = false;
+        _gameOverOverlay.UseKeyboard = false;
+        _gameOverOverlay.IsVisible = false;
+        DrawGameOverMessage();
+        Children.Add(_gameOverOverlay);
 
         // Create a menu overlay and draw the main menu; it will be visible when GameState == MainMenu
         _menuOverlay = new ScreenSurface(totalWidth, totalHeight);
@@ -189,9 +198,21 @@ public class RootScreen : ScreenObject
                     DrawMap();
                     DrawRightPanel();
                     var direction = ToDirectionText(cmd.Delta);
-                    if (turnResult.PlayerMoved)
+                    if (turnResult.PlayerAttacked)
+                    {
+                        AppendMessage($"You strike for {turnResult.DamageDealt} damage");
+                        if (turnResult.MonsterKilled)
+                        {
+                            AppendMessage("The monster is slain!");
+                        }
+                    }
+                    else if (turnResult.PlayerMoved)
                     {
                         AppendMessage($"You move {direction}");
+                        if (turnResult.ItemPickedUp)
+                        {
+                            AppendMessage($"You pick up {turnResult.ItemPickedUpName}");
+                        }
                     }
                     else
                     {
@@ -201,6 +222,11 @@ public class RootScreen : ScreenObject
                     if (turnResult.MonsterActionsExecuted > 0)
                     {
                         AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                    }
+
+                    if (turnResult.PlayerDied)
+                    {
+                        HandlePlayerDeath();
                     }
                     handled = true;
                     break;
@@ -216,6 +242,40 @@ public class RootScreen : ScreenObject
                     if (turnResult.MonsterActionsExecuted > 0)
                     {
                         AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                    }
+
+                    if (turnResult.PlayerDied)
+                    {
+                        HandlePlayerDeath();
+                    }
+
+                    handled = true;
+                    break;
+                }
+
+                case InputType.UseItem:
+                {
+                    var turnResult = _map.ProcessUsePotion();
+                    DrawMap();
+                    DrawRightPanel();
+
+                    if (turnResult.PotionUsed)
+                    {
+                        AppendMessage($"You drink a potion and heal {turnResult.HealAmount} HP");
+                    }
+                    else
+                    {
+                        AppendMessage("You have no potion to use.");
+                    }
+
+                    if (turnResult.MonsterActionsExecuted > 0)
+                    {
+                        AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                    }
+
+                    if (turnResult.PlayerDied)
+                    {
+                        HandlePlayerDeath();
                     }
 
                     handled = true;
@@ -259,6 +319,42 @@ public class RootScreen : ScreenObject
         _pauseOverlay.IsDirty = true;
     }
 
+    private void HandlePlayerDeath()
+    {
+        _game.GameOver();
+        DrawGameOverMessage();
+        _gameOverOverlay.IsVisible = true;
+        AppendMessage("You die...");
+    }
+
+    private void DrawGameOverMessage()
+    {
+        var surface = _gameOverOverlay.Surface;
+
+        for (int y = 0; y < surface.Height; y++)
+        {
+            for (int x = 0; x < surface.Width; x++)
+            {
+                surface[x, y].Glyph = ' ';
+                surface[x, y].Foreground = Color.White;
+                surface[x, y].Background = Color.Black;
+            }
+        }
+
+        const string msg = "GAME OVER - You died";
+        int msgX = Math.Max(0, (surface.Width - msg.Length) / 2);
+        int msgY = Math.Max(0, surface.Height / 2);
+
+        for (int i = 0; i < msg.Length && msgX + i < surface.Width; i++)
+        {
+            surface[msgX + i, msgY].Glyph = msg[i];
+            surface[msgX + i, msgY].Foreground = Color.Red;
+            surface[msgX + i, msgY].Background = Color.DarkRed;
+        }
+
+        _gameOverOverlay.IsDirty = true;
+    }
+
     private void DrawMap()
     {
         var surface = _mapSurface.Surface;
@@ -283,17 +379,17 @@ public class RootScreen : ScreenObject
                                 new SadRogue.Primitives.Gradient(colors, colorStops),
                                 (x, y, color) => surface[x, y].Background = color);
 
-        var mapData = _map.SaveMap();
-        foreach (var entity in mapData.Entities)
+        var cells = _map.GetRenderSnapshot();
+        foreach (var cell in cells)
         {
-            if (entity.X < 0 || entity.Y < 0 || entity.X >= surface.Width || entity.Y >= surface.Height)
+            if (cell.X < 0 || cell.Y < 0 || cell.X >= surface.Width || cell.Y >= surface.Height)
             {
                 continue;
             }
 
-            surface[entity.X, entity.Y].Glyph = entity.Glyph.Glyph;
-            surface[entity.X, entity.Y].Foreground = ColorConverter.FromArgb(entity.Glyph.ForegroundArgb);
-            surface[entity.X, entity.Y].Background = ColorConverter.FromArgb(entity.Glyph.BackgroundArgb);
+            surface[cell.X, cell.Y].Glyph = cell.Glyph.Glyph;
+            surface[cell.X, cell.Y].Foreground = ColorConverter.FromArgb(cell.Glyph.ForegroundArgb);
+            surface[cell.X, cell.Y].Background = ColorConverter.FromArgb(cell.Glyph.BackgroundArgb);
         }
 
         _mapSurface.IsDirty = true;
@@ -341,6 +437,15 @@ public class RootScreen : ScreenObject
             var pos = $"Pos: {st.X},{st.Y}";
             for (int i = 0; i < pos.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = pos[i];
             line += 2;
+
+            var (hp, maxHp) = _map.GetPlayerHealth();
+            var hpText = $"HP: {hp}/{maxHp}";
+            for (int i = 0; i < hpText.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = hpText[i];
+            line += 2;
+
+            var goldText = $"Gold: {_map.GetGold()}";
+            for (int i = 0; i < goldText.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = goldText[i];
+            line += 2;
         }
 
         const string inv = "Inventory";
@@ -352,12 +457,20 @@ public class RootScreen : ScreenObject
             surface[ix + i, line].Background = Color.DarkBlue;
         }
 
-        // Placeholder items
-        var items = new[] { "(empty)" };
-        for (int r = 0; r < items.Length && line + 1 + r < surface.Height; r++)
+        // Render inventory stacks below the "Inventory" heading.
+        var inventory = _map.Inventory;
+        if (inventory.Count == 0)
         {
-            var s = items[r];
-            for (int c = 0; c < s.Length && c < contentWidth; c++) surface[contentX + c, line + 1 + r].Glyph = s[c];
+            const string empty = "(empty)";
+            for (int c = 0; c < empty.Length && c < contentWidth; c++) surface[contentX + c, line + 1].Glyph = empty[c];
+        }
+        else
+        {
+            for (int r = 0; r < inventory.Count && line + 1 + r < surface.Height; r++)
+            {
+                var s = $"{inventory[r].Name} x{inventory[r].Count}";
+                for (int c = 0; c < s.Length && c < contentWidth; c++) surface[contentX + c, line + 1 + r].Glyph = s[c];
+            }
         }
 
         _rightPanel.IsDirty = true;

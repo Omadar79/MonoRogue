@@ -60,6 +60,11 @@ public class SadConsoleInputProvider : IInputProvider
                 results.Add(new InputCommand(InputType.Rest, new SadRogue.Primitives.Point(0, 0)));
             }
 
+            if (_keyboard.IsKeyPressed(Keys.U))
+            {
+                results.Add(new InputCommand(InputType.UseItem, new SadRogue.Primitives.Point(0, 0)));
+            }
+
             if (_keyboard.IsKeyPressed(Keys.Up))
             {
                 results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, -1)));

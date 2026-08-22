@@ -2,14 +2,22 @@ using System.Text.Json.Serialization;
 
 namespace MonoRogue.Data;
 
+public enum ItemKind
+{
+    Potion,
+    Gold
+}
+
 public sealed record ItemDefinition(
     string Name,
     char Glyph,
     int ForegroundArgb,
-    int BackgroundArgb)
+    int BackgroundArgb,
+    ItemKind Kind,
+    int Magnitude)
 {
     public static ItemDefinition Default(string name, char glyph) =>
-        new(name, glyph, unchecked((int)0xFFFFFF00), unchecked((int)0xFF000000));
+        new(name, glyph, unchecked((int)0xFFFFFF00), unchecked((int)0xFF000000), ItemKind.Gold, 1);
 }
 
 public sealed class ItemDefinitionsFile
@@ -28,7 +36,9 @@ public static class ItemDataLoader
                 item.Name.Trim(),
                 item.Glyph,
                 item.ForegroundArgb,
-                item.BackgroundArgb))
+                item.BackgroundArgb,
+                item.Kind,
+                Math.Max(1, item.Magnitude)))
             .ToList();
     }
 
@@ -40,7 +50,9 @@ public static class ItemDataLoader
                 item.Name.Trim(),
                 item.Glyph,
                 item.ForegroundArgb,
-                item.BackgroundArgb))
+                item.BackgroundArgb,
+                item.Kind,
+                Math.Max(1, item.Magnitude)))
             .ToList();
     }
 }

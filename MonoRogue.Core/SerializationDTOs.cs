@@ -3,12 +3,22 @@
 /// These live in MonoRogue.Core so core systems can operate with plain data without depending on SadConsole types.
 /// </summary>
 
+using MonoRogue.Data;
 
 namespace MonoRogue.Core;
 // 
 public sealed record GlyphDTO(char Glyph, int ForegroundArgb, int BackgroundArgb);
 
-public sealed record EntityDTO(int X, int Y, GlyphDTO Glyph, bool BlocksMovement, bool IsPlayer, int SavedEntityId = 0);
+public sealed record EntityDTO(
+    int X,
+    int Y,
+    GlyphDTO Glyph,
+    bool BlocksMovement,
+    bool IsPlayer,
+    int SavedEntityId = 0,
+    ItemKind? ItemKind = null,
+    string? ItemName = null,
+    int ItemMagnitude = 0);
 
 public sealed record EffectDTO(
 	int TargetSavedEntityId,
@@ -18,7 +28,9 @@ public sealed record EffectDTO(
 	int TimeUntilNextTick,
 	int Magnitude);
 
-public sealed record MapData(int Width, int Height, List<EntityDTO> Entities, List<EffectDTO>? Effects = null, int Version = 2);
+public sealed record ItemStackDTO(string Name, ItemKind Kind, int Count, int Magnitude);
+
+public sealed record MapData(int Width, int Height, List<EntityDTO> Entities, List<EffectDTO>? Effects = null, int Version = 2, List<ItemStackDTO>? Inventory = null);
 
 public sealed record PlayerState(int X, int Y, GlyphDTO Glyph /* add stats/inventory fields here as needed */);
 

@@ -4,13 +4,17 @@
       "name": "potion",
       "glyph": "!",
       "foregroundArgb": -16711936,
-      "backgroundArgb": -16777216
+      "backgroundArgb": -16777216,
+      "kind": "Potion",
+      "magnitude": 8
     },
     {
       "name": "gold",
       "glyph": "$",
       "foregroundArgb": -256,
-      "backgroundArgb": -16777216
+      "backgroundArgb": -16777216,
+      "kind": "Gold",
+      "magnitude": 1
     }
   ]
 }
