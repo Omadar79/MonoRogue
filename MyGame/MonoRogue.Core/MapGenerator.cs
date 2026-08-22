@@ -1,4 +1,3 @@
-using Arch.Core;
 using MonoRogue.Data;
 using SadRogue.Primitives;
 
@@ -6,20 +5,21 @@ namespace MonoRogue.Core;
 
 /// <summary>
 /// Populates the world with entities: the player, monsters, items, and treasure.
-/// Reads content definitions from the <see cref="MonoRogue.Data"/> loaders and writes
-/// entities into the <see cref="World"/>. Placement uses <see cref="Random.Shared"/> with
-/// bounded retry loops; callers that need determinism should seed the RNG.
+/// Reads content definitions from the <see cref="MonoRogue.Data"/> loaders and
+/// delegates entity construction to <see cref="EntityFactory"/>. Placement uses
+/// <see cref="Random.Shared"/> with bounded retry loops; callers that need
+/// determinism should seed the RNG.
 /// </summary>
 public sealed class MapGenerator
 {
-    private readonly World _world;
+    private readonly EntityFactory _factory;
     private readonly SpatialMap _spatial;
     private readonly int _mapWidth;
     private readonly int _mapHeight;
 
-    public MapGenerator(World world, SpatialMap spatial, int mapWidth, int mapHeight)
+    public MapGenerator(EntityFactory factory, SpatialMap spatial, int mapWidth, int mapHeight)
     {
-        _world = world;
+        _factory = factory;
         _spatial = spatial;
         _mapWidth = mapWidth;
         _mapHeight = mapHeight;
@@ -29,13 +29,13 @@ public sealed class MapGenerator
     {
         CreateTreasure();
 
-        var itemTemplates = ItemDataLoader.LoadDefinitionsFromDefaultSearchPaths(Directory.GetCurrentDirectory());
+        var itemTemplates = ItemDataLoader.LoadDefinitionsFromDefaultSearchPaths();
         foreach (var template in itemTemplates)
         {
             CreateItem(template);
         }
 
-        var templates = MonsterDataLoader.LoadDefinitionsFromDefaultSearchPaths(Directory.GetCurrentDirectory());
+        var templates = MonsterDataLoader.LoadDefinitionsFromDefaultSearchPaths();
         if (templates.Count == 0)
         {
             CreateGoblin();
@@ -53,13 +53,11 @@ public sealed class MapGenerator
     public void CreateInitialPlayer()
     {
         var center = _spatial.Center;
-        _world.Create(new Position(center),
-            RenderGlyph.FromArgb('@', GameConstants.ArgbWhite, GameConstants.ArgbBlack),
-            new ActorControlled { Kind = ActorKind.Player },
-            new BlocksMovement(),
+        _factory.CreatePlayer(
+            center,
+            new CoreGlyph('@', GameConstants.ArgbWhite, GameConstants.ArgbBlack),
             new Health { Current = GameConstants.DefaultPlayerHealth, Max = GameConstants.DefaultPlayerHealth },
-            new Attack { Damage = GameConstants.DefaultPlayerAttack },
-            new Energy { Current = GameConstants.DefaultActionCost, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
+            GameConstants.DefaultPlayerAttack);
     }
 
     private void CreateItem(ItemDefinition definition)
@@ -73,14 +71,12 @@ public sealed class MapGenerator
                 continue;
             }
 
-            _world.Create(new Position(randomPosition),
-                RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
-                new Item
-                {
-                    Kind = definition.Kind,
-                    Name = definition.Name,
-                    Magnitude = Math.Max(1, definition.Magnitude)
-                });
+            _factory.CreateItem(
+                randomPosition,
+                new CoreGlyph(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
+                definition.Kind,
+                definition.Name,
+                definition.Magnitude);
 
             break;
         }
@@ -97,19 +93,14 @@ public sealed class MapGenerator
                 continue;
             }
 
-            _world.Create(new Position(randomPosition),
-                RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
+            _factory.CreateMonster(
+                randomPosition,
+                new CoreGlyph(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
                 new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
-                new Attack { Damage = Math.Max(1, definition.Damage) },
-                new BlocksMovement(),
-                new ActorControlled { Kind = ActorKind.Monster },
+                Math.Max(1, definition.Damage),
                 new MonsterBehavior { Type = definition.Behavior, Range = definition.Range, SpecialEnergyCost = definition.SpecialEnergyCost },
-                new Energy
-                {
-                    Current = 0,
-                    GainPerTurn = Math.Max(1, definition.GainPerTurn),
-                    ActionCost = Math.Max(1, definition.ActionCost)
-                });
+                definition.GainPerTurn,
+                definition.ActionCost);
 
             break;
         }
@@ -126,7 +117,7 @@ public sealed class MapGenerator
                 continue;
             }
 
-            _world.Create(new Position(randomPosition), RenderGlyph.FromArgb('v', GameConstants.ArgbYellow, GameConstants.ArgbBlack), new BlocksMovement());
+            _factory.CreateBlocker(randomPosition, new CoreGlyph('v', GameConstants.ArgbYellow, GameConstants.ArgbBlack));
             break;
         }
     }
@@ -153,30 +144,16 @@ public sealed class MapGenerator
                 continue;
             }
 
-            _world.Create(new Position(randomPosition),
-                RenderGlyph.FromArgb((char)glyphCode, foregroundArgb, GameConstants.ArgbBlack),
+            _factory.CreateMonster(
+                randomPosition,
+                new CoreGlyph((char)glyphCode, foregroundArgb, GameConstants.ArgbBlack),
                 new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
-                new Attack { Damage = glyphCode == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack },
-                new BlocksMovement(),
-                new ActorControlled { Kind = ActorKind.Monster },
-                InferBehavior((char)glyphCode),
-                new Energy
-                {
-                    Current = 0,
-                    GainPerTurn = Math.Max(1, gainPerTurn),
-                    ActionCost = Math.Max(1, actionCost)
-                });
+                glyphCode == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack,
+                EntityFactory.InferBehavior((char)glyphCode),
+                gainPerTurn,
+                actionCost);
 
             break;
         }
-    }
-
-    // Infer monster AI from a legacy glyph when no JSON definition provides behavior.
-    // Used only for the no-content fallback and for legacy saved maps.
-    internal static MonsterBehavior InferBehavior(char glyph)
-    {
-        return glyph == 'D'
-            ? new MonsterBehavior { Type = MonsterAIType.Breath, Range = 3, SpecialEnergyCost = 300 }
-            : new MonsterBehavior { Type = MonsterAIType.Melee, Range = 1, SpecialEnergyCost = 0 };
     }
 }

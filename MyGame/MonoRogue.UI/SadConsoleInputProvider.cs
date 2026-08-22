@@ -46,6 +46,17 @@ public class SadConsoleInputProvider : IInputProvider
             return results;
         }
 
+        // Game over: allow the player to return to the main menu.
+        if (_game.CurrentState == GameState.GameOver)
+        {
+            if (_keyboard.IsKeyPressed(Keys.Enter) || _keyboard.IsKeyPressed(Keys.Escape))
+            {
+                results.Add(new InputCommand(InputType.Confirm, new SadRogue.Primitives.Point(0, 0)));
+            }
+
+            return results;
+        }
+
         // Pause/unpause is allowed when playing or paused.
         if (_keyboard.IsKeyPressed(Keys.Escape) && (_game.CurrentState == GameState.Playing || _game.CurrentState == GameState.Paused))
         {

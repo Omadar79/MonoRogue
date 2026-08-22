@@ -10,11 +10,13 @@ namespace MonoRogue.Core.Systems;
 public sealed class EffectSystem
 {
     private readonly World _world;
+    private readonly EntityFactory _factory;
     private readonly QueryDescription _effectEntities;
 
-    public EffectSystem(World world)
+    public EffectSystem(World world, EntityFactory factory)
     {
         _world = world;
+        _factory = factory;
         _effectEntities = new QueryDescription().WithAll<TimedEffect, EffectType, EffectTarget, EffectMagnitude>();
     }
 
@@ -54,7 +56,7 @@ public sealed class EffectSystem
 
         foreach (var effectEntity in expired)
         {
-            _world.Destroy(effectEntity);
+            _factory.Destroy(effectEntity);
         }
 
         return new EffectTickResult(ticksProcessed, expired.Count);
@@ -109,16 +111,16 @@ public sealed class EffectSystem
             safeTimeUntilNextTick = 0;
         }
 
-        _world.Create(
+        _factory.CreateEffect(
+            target,
+            kind,
             new TimedEffect
             {
                 RemainingTime = safeDuration,
                 TickInterval = safeInterval,
                 TimeUntilNextTick = safeTimeUntilNextTick
             },
-            new EffectType { Value = kind },
-            new EffectTarget { Value = target },
-            new EffectMagnitude { Value = Math.Max(0, magnitude) });
+            magnitude);
     }
 
     private static bool ApplyEffectTick(EffectKind kind, Entity target, int magnitude, Func<Entity, int, int> applyDamage)

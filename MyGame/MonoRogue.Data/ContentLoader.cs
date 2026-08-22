@@ -50,25 +50,26 @@ public static class ContentLoader
 
     public static List<T> LoadDefinitionsFromDefaultSearchPaths<T>(string fileName, string collectionPropertyName, string? baseDirectory = null)
     {
+        // Ordered from most-correct to least-correct so a deployed app reads its own
+        // content directory (AppContext.BaseDirectory) before falling back to
+        // developer-friendly locations (current working directory and repo root).
         var searchPaths = new List<string>();
 
-        if (!string.IsNullOrWhiteSpace(baseDirectory))
+        void AddRoot(string? root)
         {
-            searchPaths.Add(Path.Combine(baseDirectory, fileName));
-            searchPaths.Add(Path.Combine(baseDirectory, "Data", fileName));
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                return;
+            }
+
+            searchPaths.Add(Path.Combine(root, fileName));
+            searchPaths.Add(Path.Combine(root, "Data", fileName));
         }
 
-        var currentDir = Directory.GetCurrentDirectory();
-        searchPaths.Add(Path.Combine(currentDir, fileName));
-        searchPaths.Add(Path.Combine(currentDir, "Data", fileName));
-
-        var appDir = AppContext.BaseDirectory;
-        searchPaths.Add(Path.Combine(appDir, fileName));
-        searchPaths.Add(Path.Combine(appDir, "Data", fileName));
-
-        var repoRoot = Path.GetFullPath(Path.Combine(currentDir, ".."));
-        searchPaths.Add(Path.Combine(repoRoot, fileName));
-        searchPaths.Add(Path.Combine(repoRoot, "Data", fileName));
+        AddRoot(baseDirectory);
+        AddRoot(AppContext.BaseDirectory);
+        AddRoot(Directory.GetCurrentDirectory());
+        AddRoot(Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..")));
 
         foreach (var searchPath in searchPaths.Distinct())
         {

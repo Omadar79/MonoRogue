@@ -8,13 +8,7 @@ public enum ItemKind
     Gold
 }
 
-public sealed record ItemDefinition(
-    string Name,
-    char Glyph,
-    int ForegroundArgb,
-    int BackgroundArgb,
-    ItemKind Kind,
-    int Magnitude)
+public sealed record ItemDefinition(string Name, char Glyph, int ForegroundArgb, int BackgroundArgb, ItemKind Kind, int Magnitude)
 {
     public static ItemDefinition Default(string name, char glyph) =>
         new(name, glyph, unchecked((int)0xFFFFFF00), unchecked((int)0xFF000000), ItemKind.Gold, 1);

@@ -7,108 +7,61 @@ namespace MonoRogue.Core;
 
 /// <summary>
 /// Converts the ECS world and player inventory to/from plain DTOs (<see cref="MapData"/>)
-/// for persistence. File I/O is handled separately by <see cref="MapPersistenceHelpers"/>.
+/// for persistence. Reading is delegated to <see cref="WorldSnapshotReader"/> and entity
+/// construction to <see cref="EntityFactory"/>; this class only performs the DTO mapping.
+/// File I/O is handled separately by <see cref="MapPersistenceHelpers"/>.
 /// </summary>
 public sealed class MapSerializer
 {
-    private readonly World _world;
     private readonly EffectSystem _effects;
     private readonly Inventory _inventory;
+    private readonly EntityFactory _factory;
+    private readonly WorldSnapshotReader _reader;
     private readonly int _mapWidth;
     private readonly int _mapHeight;
 
-    private readonly QueryDescription _blockingEntities;
-    private readonly QueryDescription _renderableEntities;
-    private readonly QueryDescription _itemEntities;
-    private readonly QueryDescription _effectEntities;
-    private readonly QueryDescription _behaviorEntities;
-    private readonly QueryDescription _healthEntities;
-    private readonly QueryDescription _attackEntities;
-
-    public MapSerializer(World world, EffectSystem effects, Inventory inventory, int mapWidth, int mapHeight)
+    public MapSerializer(EffectSystem effects, Inventory inventory, EntityFactory factory, WorldSnapshotReader reader, int mapWidth, int mapHeight)
     {
-        _world = world;
         _effects = effects;
         _inventory = inventory;
+        _factory = factory;
+        _reader = reader;
         _mapWidth = mapWidth;
         _mapHeight = mapHeight;
-
-        _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
-        _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
-        _itemEntities = new QueryDescription().WithAll<Position, Item>();
-        _effectEntities = new QueryDescription().WithAll<TimedEffect, EffectType, EffectTarget, EffectMagnitude>();
-        _behaviorEntities = new QueryDescription().WithAll<MonsterBehavior>();
-        _healthEntities = new QueryDescription().WithAll<Health>();
-        _attackEntities = new QueryDescription().WithAll<Attack>();
     }
 
     public MapData Save()
     {
+        var snapshot = _reader.Capture();
+
         var entities = new List<EntityDTO>();
         var effects = new List<EffectDTO>();
         var savedEntityIds = new Dictionary<Entity, int>();
         var nextSavedEntityId = 1;
 
-        var blockingPositions = new HashSet<Point>();
-        _world.Query(in _blockingEntities, (ref Position pos) => { blockingPositions.Add(pos.Value); });
-
-        var playerPositions = new HashSet<Point>();
-        var playerQuery = new QueryDescription().WithAll<Position, ActorControlled>();
-        _world.Query(in playerQuery, (ref Position pos, ref ActorControlled actor) =>
-            {
-                if (actor.Kind == ActorKind.Player)
-                {
-                    playerPositions.Add(pos.Value);
-                }
-            });
-
-        var itemInfo = new Dictionary<Entity, (ItemKind Kind, string Name, int Magnitude)>();
-        _world.Query(in _itemEntities, (Entity entity, ref Item item) =>
-            {
-                itemInfo[entity] = (item.Kind, item.Name, item.Magnitude);
-            });
-
-        var behaviorInfo = new Dictionary<Entity, MonsterBehavior>();
-        _world.Query(in _behaviorEntities, (Entity entity, ref MonsterBehavior behavior) =>
-            {
-                behaviorInfo[entity] = behavior;
-            });
-
-        var healthInfo = new Dictionary<Entity, Health>();
-        _world.Query(in _healthEntities, (Entity entity, ref Health health) =>
-            {
-                healthInfo[entity] = health;
-            });
-
-        var attackInfo = new Dictionary<Entity, int>();
-        _world.Query(in _attackEntities, (Entity entity, ref Attack attack) =>
-            {
-                attackInfo[entity] = attack.Damage;
-            });
-
-        _world.Query(in _renderableEntities, (Entity entity, ref Position pos, ref RenderGlyph glyph) =>
+        foreach (var renderable in snapshot.Renderables)
         {
-            var glyphDto = new GlyphDTO(glyph.Value.Glyph, glyph.Value.ForegroundArgb, glyph.Value.BackgroundArgb);
+            var glyphDto = new GlyphDTO(renderable.Glyph.Glyph, renderable.Glyph.ForegroundArgb, renderable.Glyph.BackgroundArgb);
 
-            var isBlocked = blockingPositions.Contains(pos.Value);
-            var isPlayer = playerPositions.Contains(pos.Value);
+            var isBlocked = snapshot.BlockingPositions.Contains(renderable.Position);
+            var isPlayer = snapshot.PlayerPositions.Contains(renderable.Position);
             var savedEntityId = nextSavedEntityId++;
-            savedEntityIds[entity] = savedEntityId;
+            savedEntityIds[renderable.Entity] = savedEntityId;
 
             ItemKind? itemKind = null;
             string? itemName = null;
             int itemMagnitude = 0;
-            if (itemInfo.TryGetValue(entity, out var info))
+            if (snapshot.Items.TryGetValue(renderable.Entity, out var item))
             {
-                itemKind = info.Kind;
-                itemName = info.Name;
-                itemMagnitude = info.Magnitude;
+                itemKind = item.Kind;
+                itemName = item.Name;
+                itemMagnitude = item.Magnitude;
             }
 
             MonsterAIType? behaviorType = null;
             int behaviorRange = 0;
             int behaviorSpecialEnergyCost = 0;
-            if (behaviorInfo.TryGetValue(entity, out var behavior))
+            if (snapshot.Behaviors.TryGetValue(renderable.Entity, out var behavior))
             {
                 behaviorType = behavior.Type;
                 behaviorRange = behavior.Range;
@@ -117,36 +70,51 @@ public sealed class MapSerializer
 
             int? healthCurrent = null;
             int? healthMax = null;
-            if (healthInfo.TryGetValue(entity, out var health))
+            if (snapshot.Health.TryGetValue(renderable.Entity, out var health))
             {
                 healthCurrent = health.Current;
                 healthMax = health.Max;
             }
 
             int? attackDamage = null;
-            if (attackInfo.TryGetValue(entity, out var attack))
+            if (snapshot.Attack.TryGetValue(renderable.Entity, out var attack))
             {
                 attackDamage = attack;
             }
 
-            entities.Add(new EntityDTO(pos.Value.X, pos.Value.Y, glyphDto, isBlocked, isPlayer, savedEntityId, itemKind, itemName, itemMagnitude, behaviorType, behaviorRange, behaviorSpecialEnergyCost, healthCurrent, healthMax, attackDamage));
-        });
+            entities.Add(new EntityDTO(
+                renderable.Position.X,
+                renderable.Position.Y,
+                glyphDto,
+                isBlocked,
+                isPlayer,
+                savedEntityId,
+                itemKind,
+                itemName,
+                itemMagnitude,
+                behaviorType,
+                behaviorRange,
+                behaviorSpecialEnergyCost,
+                healthCurrent,
+                healthMax,
+                attackDamage));
+        }
 
-        _world.Query(in _effectEntities, (ref TimedEffect timed, ref EffectType type, ref EffectTarget target, ref EffectMagnitude magnitude) =>
+        foreach (var effect in snapshot.Effects)
         {
-            if (!savedEntityIds.TryGetValue(target.Value, out var targetSavedEntityId))
+            if (!savedEntityIds.TryGetValue(effect.Target, out var targetSavedEntityId))
             {
-                return;
+                continue;
             }
 
             effects.Add(new EffectDTO(
                 targetSavedEntityId,
-                type.Value,
-                timed.RemainingTime,
-                timed.TickInterval,
-                timed.TimeUntilNextTick,
-                magnitude.Value));
-        });
+                effect.Kind,
+                effect.Timed.RemainingTime,
+                effect.Timed.TickInterval,
+                effect.Timed.TimeUntilNextTick,
+                effect.Magnitude));
+        }
 
         var inventory = _inventory.Stacks.Select(s => new ItemStackDTO(s.Name, s.Kind, s.Count, s.Magnitude)).ToList();
 
@@ -160,57 +128,54 @@ public sealed class MapSerializer
             return;
         }
 
-        _world.Clear();
+        _factory.ClearWorld();
 
         var loadedEntityBySavedId = new Dictionary<int, Entity>();
 
         foreach (var e in mapData.Entities)
         {
-            var pos = new Position(new Point(e.X, e.Y));
-            var glyph = new RenderGlyph(new CoreGlyph(e.Glyph.Glyph, e.Glyph.ForegroundArgb, e.Glyph.BackgroundArgb));
+            var position = new Point(e.X, e.Y);
+            var glyph = new CoreGlyph(e.Glyph.Glyph, e.Glyph.ForegroundArgb, e.Glyph.BackgroundArgb);
             Entity createdEntity;
 
             if (e.IsPlayer)
             {
-                createdEntity = _world.Create(
-                    pos,
+                createdEntity = _factory.CreatePlayer(
+                    position,
                     glyph,
-                    new ActorControlled { Kind = ActorKind.Player },
-                    new BlocksMovement(),
                     new Health { Current = e.Health ?? GameConstants.DefaultPlayerHealth, Max = e.MaxHealth ?? GameConstants.DefaultPlayerHealth },
-                    new Attack { Damage = e.Attack ?? GameConstants.DefaultPlayerAttack },
-                    new Energy { Current = GameConstants.DefaultActionCost, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
+                    e.Attack ?? GameConstants.DefaultPlayerAttack);
             }
             else if (e.BlocksMovement)
             {
                 if (e.Glyph.Glyph is 'M' or 'g' or 'D')
                 {
-                    createdEntity = _world.Create(pos,
+                    createdEntity = _factory.CreateMonster(
+                        position,
                         glyph,
                         new Health { Current = e.Health ?? GameConstants.DefaultMonsterHealth, Max = e.MaxHealth ?? GameConstants.DefaultMonsterHealth },
-                        new Attack { Damage = e.Attack ?? (e.Glyph.Glyph == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack) },
-                        new BlocksMovement(),
-                        new ActorControlled { Kind = ActorKind.Monster },
+                        e.Attack ?? (e.Glyph.Glyph == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack),
                         ResolveBehavior(e),
-                        new Energy { Current = 0, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
+                        GameConstants.DefaultEnergyPerTurn,
+                        GameConstants.DefaultActionCost);
                 }
                 else
                 {
-                    createdEntity = _world.Create(pos, glyph, new BlocksMovement());
+                    createdEntity = _factory.CreateBlocker(position, glyph);
                 }
             }
             else if (e.ItemName != null)
             {
-                createdEntity = _world.Create(pos, glyph, new Item
-                {
-                    Kind = e.ItemKind ?? ItemKind.Gold,
-                    Name = e.ItemName,
-                    Magnitude = Math.Max(1, e.ItemMagnitude)
-                });
+                createdEntity = _factory.CreateItem(
+                    position,
+                    glyph,
+                    e.ItemKind ?? ItemKind.Gold,
+                    e.ItemName,
+                    e.ItemMagnitude);
             }
             else
             {
-                createdEntity = _world.Create(pos, glyph);
+                createdEntity = _factory.CreateDecoration(position, glyph);
             }
 
             if (e.SavedEntityId > 0)
@@ -264,6 +229,6 @@ public sealed class MapSerializer
             };
         }
 
-        return MapGenerator.InferBehavior(e.Glyph.Glyph);
+        return EntityFactory.InferBehavior(e.Glyph.Glyph);
     }
 }

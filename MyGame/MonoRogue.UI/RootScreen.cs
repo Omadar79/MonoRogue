@@ -10,7 +10,8 @@ namespace MonoRogue.UI;
 public class RootScreen : ScreenObject
 {
     private GameMain _game;
-    private MapBase _map;
+    private int _mapWidth;
+    private int _mapHeight;
     private ScreenSurface _mapSurface;
     private ScreenSurface _pauseOverlay;
     private ScreenSurface _menuOverlay;
@@ -33,9 +34,11 @@ public class RootScreen : ScreenObject
         int totalHeight = Game.Instance.ScreenCellsY;
         int mapWidth = Math.Max(10, totalWidth - GameSettings.RIGHT_PANEL_WIDTH);
         int mapHeight = Math.Max(8, totalHeight - GameSettings.BOTTOM_CONSOLE_HEIGHT);
+        _mapWidth = mapWidth;
+        _mapHeight = mapHeight;
 
-        // Create the main map (left area)
-        _map = new MapBase(mapWidth, mapHeight);
+        // The map is owned and created by GameMain (lazily on "New Game"/"Load Map");
+        // this screen only renders it and forwards commands.
         _mapSurface = new ScreenSurface(mapWidth, mapHeight);
         _mapSurface.UseMouse = false;
         _mapSurface.UseKeyboard = false;
@@ -87,18 +90,6 @@ public class RootScreen : ScreenObject
 
     public override bool ProcessKeyboard(Keyboard keyboard)
     {
-        // Let visible children that accept keyboard input handle it first (topmost first)
-        for (int i = Children.Count - 1; i >= 0; i--)
-        {
-            if (Children[i] is ScreenObject child && child.IsVisible && child.UseKeyboard)
-            {
-                if (child.ProcessKeyboard(keyboard))
-                {
-                    return true;
-                }
-            }
-        }
-
         bool handled = false;
 
         // Create an input-provider adapter that translates the SadConsole Keyboard snapshot
@@ -125,7 +116,7 @@ public class RootScreen : ScreenObject
                     var choice = _menuOptions[_menuSelectedIndex];
                     if (choice == "New Game")
                     {
-                        _game.StartNewGame();
+                        _game.StartNewGame(_mapWidth, _mapHeight);
                         _menuOverlay.IsVisible = false;
                         DrawMap();
                         DrawRightPanel();
@@ -134,8 +125,14 @@ public class RootScreen : ScreenObject
                     {
                         try
                         {
-                            MapPersistenceHelpers.SaveToFile(_map, "saved_map.json");
-                            AppendMessage($"Saved map. Active effects: {_map.GetActiveEffectCount()}");
+                            if (_game.SaveMap("saved_map.json"))
+                            {
+                                AppendMessage($"Saved map. Active effects: {_game.CurrentMap!.GetActiveEffectCount()}");
+                            }
+                            else
+                            {
+                                AppendMessage("No active game to save.");
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -148,17 +145,17 @@ public class RootScreen : ScreenObject
                     {
                         try
                         {
-                            var loaded = MapPersistenceHelpers.LoadIntoWorld(_map, "saved_map.json");
-                            if (!loaded)
+                            if (_game.LoadMap("saved_map.json", _mapWidth, _mapHeight))
+                            {
+                                _menuOverlay.IsVisible = false;
+                                DrawMap();
+                                DrawRightPanel();
+                                AppendMessage($"Loaded map. Restored active effects: {_game.CurrentMap!.GetActiveEffectCount()}");
+                            }
+                            else
                             {
                                 AppendMessage("No saved map found.");
-                                handled = true;
-                                break;
                             }
-
-                            DrawMap();
-                            DrawRightPanel();
-                            AppendMessage($"Loaded map. Restored active effects: {_map.GetActiveEffectCount()}");
                         }
                         catch (Exception ex)
                         {
@@ -169,13 +166,20 @@ public class RootScreen : ScreenObject
                     }
                     else if (choice == "Exit Game")
                     {
-                        Environment.Exit(0);
+                        Game.Instance.MonoGameInstance.Exit();
                     }
                     handled = true;
                     break;
 
                 case InputType.MenuExit:
-                    Environment.Exit(0);
+                    Game.Instance.MonoGameInstance.Exit();
+                    handled = true;
+                    break;
+
+                case InputType.Confirm:
+                    // Only reachable after a game over: return to the main menu.
+                    _game.ReturnToMainMenu();
+                    ShowMainMenu();
                     handled = true;
                     break;
 
@@ -194,24 +198,31 @@ public class RootScreen : ScreenObject
 
                 case InputType.Move:
                 {
-                    var turnResult = _map.ProcessPlayerTurn(cmd.Delta);
+                    var turnResult = _game.ProcessPlayerTurn(cmd.Delta);
+                    if (!turnResult.HasValue)
+                    {
+                        handled = true;
+                        break;
+                    }
+
+                    var tr = turnResult.Value;
                     DrawMap();
                     DrawRightPanel();
                     var direction = ToDirectionText(cmd.Delta);
-                    if (turnResult.PlayerAttacked)
+                    if (tr.PlayerAttacked)
                     {
-                        AppendMessage($"You strike for {turnResult.DamageDealt} damage");
-                        if (turnResult.MonsterKilled)
+                        AppendMessage($"You strike for {tr.DamageDealt} damage");
+                        if (tr.MonsterKilled)
                         {
                             AppendMessage("The monster is slain!");
                         }
                     }
-                    else if (turnResult.PlayerMoved)
+                    else if (tr.PlayerMoved)
                     {
                         AppendMessage($"You move {direction}");
-                        if (turnResult.ItemPickedUp)
+                        if (tr.ItemPickedUp)
                         {
-                            AppendMessage($"You pick up {turnResult.ItemPickedUpName}");
+                            AppendMessage($"You pick up {tr.ItemPickedUpName}");
                         }
                     }
                     else
@@ -219,12 +230,12 @@ public class RootScreen : ScreenObject
                         AppendMessage($"You are obstructed from moving {direction}");
                     }
 
-                    if (turnResult.MonsterActionsExecuted > 0)
+                    if (tr.MonsterActionsExecuted > 0)
                     {
-                        AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                        AppendMessage($"Monsters act: {tr.MonsterActionsExecuted}");
                     }
 
-                    if (turnResult.PlayerDied)
+                    if (tr.PlayerDied)
                     {
                         HandlePlayerDeath();
                     }
@@ -234,17 +245,24 @@ public class RootScreen : ScreenObject
 
                 case InputType.Rest:
                 {
-                    var turnResult = _map.ProcessPlayerTurn(SadRogue.Primitives.Point.None);
+                    var turnResult = _game.ProcessPlayerTurn(SadRogue.Primitives.Point.None);
+                    if (!turnResult.HasValue)
+                    {
+                        handled = true;
+                        break;
+                    }
+
+                    var tr = turnResult.Value;
                     DrawMap();
                     DrawRightPanel();
                     AppendMessage("You rest.");
 
-                    if (turnResult.MonsterActionsExecuted > 0)
+                    if (tr.MonsterActionsExecuted > 0)
                     {
-                        AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                        AppendMessage($"Monsters act: {tr.MonsterActionsExecuted}");
                     }
 
-                    if (turnResult.PlayerDied)
+                    if (tr.PlayerDied)
                     {
                         HandlePlayerDeath();
                     }
@@ -255,25 +273,32 @@ public class RootScreen : ScreenObject
 
                 case InputType.UseItem:
                 {
-                    var turnResult = _map.ProcessUsePotion();
+                    var turnResult = _game.ProcessUsePotion();
+                    if (!turnResult.HasValue)
+                    {
+                        handled = true;
+                        break;
+                    }
+
+                    var tr = turnResult.Value;
                     DrawMap();
                     DrawRightPanel();
 
-                    if (turnResult.PotionUsed)
+                    if (tr.PotionUsed)
                     {
-                        AppendMessage($"You drink a potion and heal {turnResult.HealAmount} HP");
+                        AppendMessage($"You drink a potion and heal {tr.HealAmount} HP");
                     }
                     else
                     {
                         AppendMessage("You have no potion to use.");
                     }
 
-                    if (turnResult.MonsterActionsExecuted > 0)
+                    if (tr.MonsterActionsExecuted > 0)
                     {
-                        AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                        AppendMessage($"Monsters act: {tr.MonsterActionsExecuted}");
                     }
 
-                    if (turnResult.PlayerDied)
+                    if (tr.PlayerDied)
                     {
                         HandlePlayerDeath();
                     }
@@ -327,6 +352,16 @@ public class RootScreen : ScreenObject
         AppendMessage("You die...");
     }
 
+    private void ShowMainMenu()
+    {
+        _gameOverOverlay.IsVisible = false;
+        _pauseOverlay.IsVisible = false;
+        _messages.Clear();
+        DrawMessageConsole();
+        _menuOverlay.IsVisible = true;
+        DrawMainMenu();
+    }
+
     private void DrawGameOverMessage()
     {
         var surface = _gameOverOverlay.Surface;
@@ -341,7 +376,7 @@ public class RootScreen : ScreenObject
             }
         }
 
-        const string msg = "GAME OVER - You died";
+        const string msg = "GAME OVER - You died (press Enter to return to menu)";
         int msgX = Math.Max(0, (surface.Width - msg.Length) / 2);
         int msgY = Math.Max(0, surface.Height / 2);
 
@@ -379,17 +414,21 @@ public class RootScreen : ScreenObject
                                 new SadRogue.Primitives.Gradient(colors, colorStops),
                                 (x, y, color) => surface[x, y].Background = color);
 
-        var cells = _map.GetRenderSnapshot();
-        foreach (var cell in cells)
+        var map = _game.CurrentMap;
+        if (map != null)
         {
-            if (cell.X < 0 || cell.Y < 0 || cell.X >= surface.Width || cell.Y >= surface.Height)
+            var cells = map.GetRenderSnapshot();
+            foreach (var cell in cells)
             {
-                continue;
-            }
+                if (cell.X < 0 || cell.Y < 0 || cell.X >= surface.Width || cell.Y >= surface.Height)
+                {
+                    continue;
+                }
 
-            surface[cell.X, cell.Y].Glyph = cell.Glyph.Glyph;
-            surface[cell.X, cell.Y].Foreground = ColorConverter.FromArgb(cell.Glyph.ForegroundArgb);
-            surface[cell.X, cell.Y].Background = ColorConverter.FromArgb(cell.Glyph.BackgroundArgb);
+                surface[cell.X, cell.Y].Glyph = cell.Glyph.Glyph;
+                surface[cell.X, cell.Y].Foreground = ColorConverter.FromArgb(cell.Glyph.ForegroundArgb);
+                surface[cell.X, cell.Y].Background = ColorConverter.FromArgb(cell.Glyph.BackgroundArgb);
+            }
         }
 
         _mapSurface.IsDirty = true;
@@ -430,7 +469,8 @@ public class RootScreen : ScreenObject
         }
 
         // Show a simple player state if present
-        var st = _map.ExtractPlayerState();
+        var map = _game.CurrentMap;
+        var st = map?.ExtractPlayerState();
         var line = 2;
         if (st != null)
         {
@@ -438,12 +478,12 @@ public class RootScreen : ScreenObject
             for (int i = 0; i < pos.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = pos[i];
             line += 2;
 
-            var (hp, maxHp) = _map.GetPlayerHealth();
+            var (hp, maxHp) = map!.GetPlayerHealth();
             var hpText = $"HP: {hp}/{maxHp}";
             for (int i = 0; i < hpText.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = hpText[i];
             line += 2;
 
-            var goldText = $"Gold: {_map.GetGold()}";
+            var goldText = $"Gold: {map!.GetGold()}";
             for (int i = 0; i < goldText.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = goldText[i];
             line += 2;
         }
@@ -458,8 +498,8 @@ public class RootScreen : ScreenObject
         }
 
         // Render inventory stacks below the "Inventory" heading.
-        var inventory = _map.Inventory;
-        if (inventory.Count == 0)
+        var inventory = map?.Inventory;
+        if (inventory == null || inventory.Count == 0)
         {
             const string empty = "(empty)";
             for (int c = 0; c < empty.Length && c < contentWidth; c++) surface[contentX + c, line + 1].Glyph = empty[c];

@@ -13,13 +13,15 @@ public sealed class MonsterAISystem
     private readonly World _world;
     private readonly SpatialMap _spatial;
     private readonly CombatSystem _combat;
+    private readonly EntityFactory _factory;
     private readonly QueryDescription _actorEntities;
 
-    public MonsterAISystem(World world, SpatialMap spatial, CombatSystem combat)
+    public MonsterAISystem(World world, SpatialMap spatial, CombatSystem combat, EntityFactory factory)
     {
         _world = world;
         _spatial = spatial;
         _combat = combat;
+        _factory = factory;
         _actorEntities = new QueryDescription().WithAll<Position, ActorControlled, Energy, MonsterBehavior>();
     }
 
@@ -89,7 +91,7 @@ public sealed class MonsterAISystem
 
         foreach (var entity in dead)
         {
-            _world.Destroy(entity);
+            _factory.Destroy(entity);
         }
     }
 

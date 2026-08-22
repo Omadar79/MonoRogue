@@ -26,6 +26,7 @@ public class MapBase : IDisposable
     private readonly MonsterAISystem _monsterAI;
     private readonly MapGenerator _generator;
     private readonly MapSerializer _serializer;
+    private readonly EntityFactory _factory;
 
     private readonly Inventory _inventory = new();
 
@@ -49,12 +50,13 @@ public class MapBase : IDisposable
 
         _spatial = new SpatialMap(_world, mapWidth, mapHeight);
         _energy = new EnergySystem(_world);
-        _effects = new EffectSystem(_world);
+        _factory = new EntityFactory(_world);
+        _effects = new EffectSystem(_world, _factory);
         _combat = new CombatSystem(_world, _effects);
         _playerAction = new PlayerActionSystem(_world, _spatial);
-        _monsterAI = new MonsterAISystem(_world, _spatial, _combat);
-        _generator = new MapGenerator(_world, _spatial, mapWidth, mapHeight);
-        _serializer = new MapSerializer(_world, _effects, _inventory, mapWidth, mapHeight);
+        _monsterAI = new MonsterAISystem(_world, _spatial, _combat, _factory);
+        _generator = new MapGenerator(_factory, _spatial, mapWidth, mapHeight);
+        _serializer = new MapSerializer(_effects, _inventory, _factory, new WorldSnapshotReader(_world), mapWidth, mapHeight);
 
         _generator.CreateInitialPlayer();
         _generator.GenerateNewMap();
@@ -261,7 +263,7 @@ public class MapBase : IDisposable
 
         foreach (var entity in itemEntities)
         {
-            _world.Destroy(entity);
+            _factory.Destroy(entity);
         }
 
         return firstPickupName;

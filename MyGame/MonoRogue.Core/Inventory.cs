@@ -15,20 +15,26 @@ public sealed class Inventory
 
     public void Clear() => _stacks.Clear();
 
-    /// <summary>Adds one item, merging into an existing stack of the same kind and name.</summary>
+    /// <summary>
+    /// Adds one item, merging into an existing stack only when kind, name, and magnitude
+    /// all match. Items with differing magnitudes (e.g. gold of different values) are kept
+    /// in separate stacks so <see cref="GetGold"/> stays correct.
+    /// </summary>
     public void Add(ItemKind kind, string name, int magnitude)
     {
+        magnitude = Math.Max(1, magnitude);
+
         for (var i = 0; i < _stacks.Count; i++)
         {
             var stack = _stacks[i];
-            if (stack.Kind == kind && stack.Name == name)
+            if (stack.Kind == kind && stack.Name == name && stack.Magnitude == magnitude)
             {
                 _stacks[i] = stack with { Count = stack.Count + 1 };
                 return;
             }
         }
 
-        _stacks.Add(new ItemStack(kind, name, 1, Math.Max(1, magnitude)));
+        _stacks.Add(new ItemStack(kind, name, 1, magnitude));
     }
 
     /// <summary>Appends a fully-formed stack (used when restoring a saved inventory).</summary>

@@ -22,4 +22,10 @@
     <PackageReference Include="SadConsole.Extended" Version="10.10.0" />
   </ItemGroup>
 
+  <!-- Copy runtime JSON content next to the built executable so the loaders can
+       find monsters.json / items.json from AppContext.BaseDirectory\Data. -->
+  <ItemGroup>
+    <Content Include="..\Data\*.json" Link="Data\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
