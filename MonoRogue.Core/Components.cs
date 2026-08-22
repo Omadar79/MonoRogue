@@ -30,20 +30,25 @@ public struct RenderGlyph
 
 public readonly record struct CoreGlyph(char Glyph, int ForegroundArgb, int BackgroundArgb);
 
-public readonly struct PlayerControlled
+// ActorKind and ActorControlled unify player/monster markers so systems can
+// operate on actors uniformly while still distinguishing player vs monster.
+public enum ActorKind
 {
+    Player,
+    Monster
 }
 
-public readonly struct MonsterControlled
+public struct ActorControlled
 {
+    public ActorKind Kind;
 }
 
 public struct Energy
 {
-    // Current stored energy; monsters act while Current >= ActionCost.
+    // Current stored energy; any actor acts while Current >= ActionCost.
     public int Current;
 
-    // Energy gained each player turn (100 means one action per player action).
+    // Energy gained each turn (100 means one action per turn for a 100-cost actor).
     public int GainPerTurn;
 
     // Cost to perform one action.

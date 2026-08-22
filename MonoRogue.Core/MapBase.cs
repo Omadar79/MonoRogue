@@ -12,7 +12,7 @@ public class MapBase : IDisposable
     private readonly int _mapHeight;
     private readonly QueryDescription _blockingEntities;
     private readonly QueryDescription _renderableEntities;
-    private readonly QueryDescription _monsterActors;
+    private readonly QueryDescription _actorEntities;
     private readonly QueryDescription _effectEntities;
     private readonly QueryDescription _healthEntities;
     private readonly QueryDescription _playerEntities;
@@ -39,10 +39,10 @@ public class MapBase : IDisposable
         _mapHeight = mapHeight;
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
-        _monsterActors = new QueryDescription().WithAll<Position, MonsterControlled, Energy, RenderGlyph>();
+        _actorEntities = new QueryDescription().WithAll<Position, ActorControlled, Energy, RenderGlyph>();
         _effectEntities = new QueryDescription().WithAll<TimedEffect, EffectType, EffectTarget, EffectMagnitude>();
         _healthEntities = new QueryDescription().WithAll<Health>();
-        _playerEntities = new QueryDescription().WithAll<PlayerControlled>();
+        _playerEntities = new QueryDescription().WithAll<ActorControlled>();
 
         CreateInitialPlayer();
         GenerateNewMap();
@@ -60,8 +60,8 @@ public class MapBase : IDisposable
         _world.Query(in _blockingEntities, (ref Position pos) => { blockingPositions.Add(pos.Value); });
 
         var playerPositions = new HashSet<Point>();
-        var playerQuery = new QueryDescription().WithAll<Position, PlayerControlled>();
-        _world.Query(in playerQuery, (ref Position pos) => { playerPositions.Add(pos.Value); });
+        var playerQuery = new QueryDescription().WithAll<Position, ActorControlled>();
+        _world.Query(in playerQuery, (ref Position pos, ref ActorControlled actor) => { if (actor.Kind == ActorKind.Player) playerPositions.Add(pos.Value); });
 
         _world.Query(in _renderableEntities, (Entity entity, ref Position pos, ref RenderGlyph glyph) =>
         {
@@ -122,9 +122,10 @@ public class MapBase : IDisposable
                 createdEntity = _world.Create(
                     pos,
                     glyph,
-                    new PlayerControlled(),
+                    new ActorControlled { Kind = ActorKind.Player },
                     new BlocksMovement(),
-                    new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth });
+                    new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth },
+                    new Energy { Current = DefaultActionCost, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
             }
             else if (e.BlocksMovement)
             {
@@ -134,7 +135,7 @@ public class MapBase : IDisposable
                         glyph,
                         new Health { Current = DefaultMonsterHealth, Max = DefaultMonsterHealth },
                         new BlocksMovement(),
-                        new MonsterControlled(),
+                            new ActorControlled { Kind = ActorKind.Monster },
                         new Energy { Current = 0, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
                 }
                 else
@@ -179,9 +180,10 @@ public class MapBase : IDisposable
     public PlayerState? ExtractPlayerState()
     {
         PlayerState? result = null;
-        var q = new QueryDescription().WithAll<Position, PlayerControlled, RenderGlyph>();
-        _world.Query(in q, (ref Position pos, ref RenderGlyph glyph) =>
+        var q = new QueryDescription().WithAll<Position, ActorControlled, RenderGlyph>();
+        _world.Query(in q, (ref Position pos, ref ActorControlled actor, ref RenderGlyph glyph) =>
         {
+            if (actor.Kind != ActorKind.Player) return;
             var glyphDto = new GlyphDTO(glyph.Value.Glyph, glyph.Value.ForegroundArgb, glyph.Value.BackgroundArgb);
             result = new PlayerState(pos.Value.X, pos.Value.Y, glyphDto);
         });
@@ -194,11 +196,17 @@ public class MapBase : IDisposable
         return TryMovePlayerNoRefresh(offset);
     }
 
+    public bool TryRestPlayer()
+    {
+        return TryMovePlayerNoRefresh(Point.None);
+    }
+
     // Process one gameplay turn in deterministic order: player action -> monster actions.
     public TurnResult ProcessPlayerTurn(Point playerDelta)
     {
+        AdvanceActorEnergy();
         var playerMoved = TryMovePlayerNoRefresh(playerDelta);
-        var monsterActionsExecuted = ProcessMonsters();
+        var monsterActionsExecuted = ProcessActors();
         var effectResult = ProcessEffects(TurnTimeQuantum);
 
         return new TurnResult(playerMoved, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired);
@@ -291,9 +299,22 @@ public class MapBase : IDisposable
     private bool TryMovePlayerNoRefresh(Point offset)
     {
         var moved = false;
-        var playerQuery = new QueryDescription().WithAll<Position, PlayerControlled>();
-        _world.Query(in playerQuery, (ref Position position) =>
+        var playerQuery = new QueryDescription().WithAll<Position, ActorControlled, Energy>();
+        _world.Query(in playerQuery, (ref Position position, ref ActorControlled actor, ref Energy energy) =>
         {
+            if (actor.Kind != ActorKind.Player) return;
+            var actionCost = Math.Max(1, energy.ActionCost);
+            if (energy.Current < actionCost)
+            {
+                return;
+            }
+
+            if (offset == Point.None)
+            {
+                energy.Current -= actionCost;
+                return;
+            }
+
             var destination = position.Value + offset;
             if (!IsValidCell(destination) || IsBlocked(destination))
             {
@@ -301,13 +322,27 @@ public class MapBase : IDisposable
             }
 
             position.Value = destination;
+            energy.Current -= actionCost;
             moved = true;
         });
 
         return moved;
     }
 
-    private int ProcessMonsters()
+    private void AdvanceActorEnergy()
+    {
+        _world.Query(in _actorEntities, (ref ActorControlled actor, ref Energy energy) =>
+        {
+            if (energy.GainPerTurn <= 0)
+            {
+                return;
+            }
+
+            energy.Current += energy.GainPerTurn;
+        });
+    }
+
+    private int ProcessActors()
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition is null)
@@ -316,15 +351,9 @@ public class MapBase : IDisposable
         }
 
         var actionsExecuted = 0;
-        _world.Query(in _monsterActors, (ref Position monsterPosition, ref Energy energy, ref RenderGlyph glyph) =>
+        _world.Query(in _actorEntities, (ref Position monsterPosition, ref ActorControlled actor, ref Energy energy, ref RenderGlyph glyph) =>
         {
-            if (energy.GainPerTurn <= 0)
-            {
-                return;
-            }
-
-            energy.Current += energy.GainPerTurn;
-
+            if (actor.Kind != ActorKind.Monster) return;
             var actionsForThisMonster = 0;
             while (actionsForThisMonster < MaxMonsterActionsPerTurn)
             {
@@ -406,9 +435,10 @@ public class MapBase : IDisposable
     private Point? GetPlayerPosition()
     {
         Point? result = null;
-        var playerQuery = new QueryDescription().WithAll<Position, PlayerControlled>();
-        _world.Query(in playerQuery, (ref Position position) =>
+        var playerQuery = new QueryDescription().WithAll<Position, ActorControlled>();
+        _world.Query(in playerQuery, (ref Position position, ref ActorControlled actor) =>
         {
+            if (actor.Kind != ActorKind.Player) return;
             result ??= position.Value;
         });
 
@@ -563,9 +593,9 @@ public class MapBase : IDisposable
     {
         var result = default(Entity);
         var found = false;
-        _world.Query(in _playerEntities, (Entity entity) =>
+        _world.Query(in _playerEntities, (Entity entity, ref ActorControlled actor) =>
         {
-            if (found)
+            if (found || actor.Kind != ActorKind.Player)
             {
                 return;
             }
@@ -655,7 +685,7 @@ public class MapBase : IDisposable
                 RenderGlyph.FromArgb(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
                 new Health { Current = DefaultMonsterHealth, Max = DefaultMonsterHealth },
                 new BlocksMovement(),
-                new MonsterControlled(),
+                new ActorControlled { Kind = ActorKind.Monster },
                 new Energy
                 {
                     Current = 0,
@@ -680,9 +710,10 @@ public class MapBase : IDisposable
 
         _world.Create(pos,
             glyph,
-            new PlayerControlled(),
+            new ActorControlled { Kind = ActorKind.Player },
             new BlocksMovement(),
-            new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth });
+            new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth },
+            new Energy { Current = DefaultActionCost, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
     }
 
     // Clear the current world. If preservePlayerState is true, player will be extracted and recreated after the world is cleared.
@@ -708,9 +739,10 @@ public class MapBase : IDisposable
         var center = new Point(_mapWidth / 2, _mapHeight / 2);
         _world.Create(new Position(center),
             RenderGlyph.FromArgb('@', ArgbWhite, ArgbBlack),
-            new PlayerControlled(),
+            new ActorControlled { Kind = ActorKind.Player },
             new BlocksMovement(),
-            new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth });
+            new Health { Current = DefaultPlayerHealth, Max = DefaultPlayerHealth },
+            new Energy { Current = DefaultActionCost, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
     }
 
     private void CreateTreasure()
@@ -755,7 +787,7 @@ public class MapBase : IDisposable
                 RenderGlyph.FromArgb((char)glyphCode, foregroundArgb, ArgbBlack),
                 new Health { Current = DefaultMonsterHealth, Max = DefaultMonsterHealth },
                 new BlocksMovement(),
-                new MonsterControlled(),
+                new ActorControlled { Kind = ActorKind.Monster },
                 new Energy
                 {
                     Current = 0,

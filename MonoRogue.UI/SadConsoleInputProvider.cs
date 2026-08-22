@@ -55,6 +55,11 @@ public class SadConsoleInputProvider : IInputProvider
         // Movement only when gameplay input is allowed.
         if (_game.AllowsGameplayInput())
         {
+            if (_keyboard.IsKeyPressed(Keys.R))
+            {
+                results.Add(new InputCommand(InputType.Rest, new SadRogue.Primitives.Point(0, 0)));
+            }
+
             if (_keyboard.IsKeyPressed(Keys.Up))
             {
                 results.Add(new InputCommand(InputType.Move, new SadRogue.Primitives.Point(0, -1)));

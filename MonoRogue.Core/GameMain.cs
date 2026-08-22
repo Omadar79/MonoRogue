@@ -15,6 +15,7 @@ public enum InputType
 {
     TogglePause,
     Move,
+    Rest,
     MenuUp,
     MenuDown,
     MenuSelect,
@@ -109,6 +110,7 @@ public class GameMain
 
                 // Movement only when gameplay input is allowed
                 case InputType.Move:
+                case InputType.Rest:
                     if (AllowsGameplayInput())
                     {
                         results.Add(cmd);

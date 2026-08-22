@@ -7,6 +7,8 @@ public class Player
 {
     private const int ArgbWhite = unchecked((int)0xFFFFFFFF);
     private const int ArgbBlack = unchecked((int)0xFF000000);
+    private const int DefaultEnergyPerTurn = 100;
+    private const int DefaultActionCost = 100;
 
     private readonly QueryDescription _playerEntities;
 
@@ -17,7 +19,7 @@ public class Player
     public Player(World world, MapBase currentMap)
     {
         _world = world;
-        _playerEntities = new QueryDescription().WithAll<Position, PlayerControlled, RenderGlyph>();
+        _playerEntities = new QueryDescription().WithAll<Position, ActorControlled, RenderGlyph, Energy>();
 
         _currentMap = currentMap;
 
@@ -26,26 +28,47 @@ public class Player
     
     public bool TryMovePlayer(Point offset)
     {
-        var moved = false;
+        return TryPlayerAction(offset);
+    }
 
-        _world.Query(in _playerEntities, (ref Position position, ref RenderGlyph renderGlyph) =>
+    public bool TryRestPlayer()
+    {
+        return TryPlayerAction(Point.None);
+    }
+
+    private bool TryPlayerAction(Point offset)
+    {
+        var acted = false;
+
+        _world.Query(in _playerEntities, (ref Position position, ref RenderGlyph renderGlyph, ref Energy energy) =>
         {
-            var destination = position.Value + offset;
-            if (!_currentMap.IsValidCell(destination) || _currentMap.IsBlocked(destination))
+            var actionCost = Math.Max(1, energy.ActionCost);
+            if (energy.Current < actionCost)
             {
                 return;
             }
 
-            position.Value = destination;
-            moved = true;
+            if (offset != Point.None)
+            {
+                var destination = position.Value + offset;
+                if (!_currentMap.IsValidCell(destination) || _currentMap.IsBlocked(destination))
+                {
+                    return;
+                }
+
+                position.Value = destination;
+            }
+
+            energy.Current -= actionCost;
+            acted = true;
         });
 
-        return moved;
+        return acted;
     }
     
     private void CreatePlayer(Point position)
     {
-        _world.Create(new Position(position), RenderGlyph.FromArgb('@', ArgbWhite, ArgbBlack), new PlayerControlled(), new BlocksMovement());
+            _world.Create(new Position(position), RenderGlyph.FromArgb('@', ArgbWhite, ArgbBlack), new ActorControlled { Kind = ActorKind.Player }, new BlocksMovement(), new Energy { Current = DefaultActionCost, GainPerTurn = DefaultEnergyPerTurn, ActionCost = DefaultActionCost });
     }
 }
 

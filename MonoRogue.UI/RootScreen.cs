@@ -184,6 +184,7 @@ public class RootScreen : ScreenObject
                     break;
 
                 case InputType.Move:
+                {
                     var turnResult = _map.ProcessPlayerTurn(cmd.Delta);
                     DrawMap();
                     DrawRightPanel();
@@ -203,6 +204,23 @@ public class RootScreen : ScreenObject
                     }
                     handled = true;
                     break;
+                }
+
+                case InputType.Rest:
+                {
+                    var turnResult = _map.ProcessPlayerTurn(SadRogue.Primitives.Point.None);
+                    DrawMap();
+                    DrawRightPanel();
+                    AppendMessage("You rest.");
+
+                    if (turnResult.MonsterActionsExecuted > 0)
+                    {
+                        AppendMessage($"Monsters act: {turnResult.MonsterActionsExecuted}");
+                    }
+
+                    handled = true;
+                    break;
+                }
             }
         }
 
