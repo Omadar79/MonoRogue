@@ -18,7 +18,13 @@ public sealed record EntityDTO(
     int SavedEntityId = 0,
     ItemKind? ItemKind = null,
     string? ItemName = null,
-    int ItemMagnitude = 0);
+    int ItemMagnitude = 0,
+    MonsterAIType? Behavior = null,
+    int BehaviorRange = 0,
+    int BehaviorSpecialEnergyCost = 0,
+    int? Health = null,
+    int? MaxHealth = null,
+    int? Attack = null);
 
 public sealed record EffectDTO(
 	int TargetSavedEntityId,
@@ -30,7 +36,7 @@ public sealed record EffectDTO(
 
 public sealed record ItemStackDTO(string Name, ItemKind Kind, int Count, int Magnitude);
 
-public sealed record MapData(int Width, int Height, List<EntityDTO> Entities, List<EffectDTO>? Effects = null, int Version = 2, List<ItemStackDTO>? Inventory = null);
+public sealed record MapData(int Width, int Height, List<EntityDTO> Entities, List<EffectDTO>? Effects = null, int Version = 4, List<ItemStackDTO>? Inventory = null);
 
 public sealed record PlayerState(int X, int Y, GlyphDTO Glyph /* add stats/inventory fields here as needed */);
 

@@ -24,6 +24,9 @@ public class MapBase : IDisposable
     private readonly QueryDescription _renderableEntities;
     private readonly QueryDescription _itemEntities;
     private readonly QueryDescription _effectEntities;
+    private readonly QueryDescription _behaviorEntities;
+    private readonly QueryDescription _healthEntities;
+    private readonly QueryDescription _attackEntities;
 
     private readonly List<ItemStack> _inventory = new();
 
@@ -42,6 +45,9 @@ public class MapBase : IDisposable
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
         _itemEntities = new QueryDescription().WithAll<Position, Item>();
         _effectEntities = new QueryDescription().WithAll<TimedEffect, EffectType, EffectTarget, EffectMagnitude>();
+        _behaviorEntities = new QueryDescription().WithAll<MonsterBehavior>();
+        _healthEntities = new QueryDescription().WithAll<Health>();
+        _attackEntities = new QueryDescription().WithAll<Attack>();
 
         _spatial = new SpatialMap(_world, mapWidth, mapHeight);
         _energy = new EnergySystem(_world);
@@ -82,6 +88,24 @@ public class MapBase : IDisposable
             itemInfo[entity] = (item.Kind, item.Name, item.Magnitude);
         });
 
+        var behaviorInfo = new Dictionary<Entity, MonsterBehavior>();
+        _world.Query(in _behaviorEntities, (Entity entity, ref MonsterBehavior behavior) =>
+        {
+            behaviorInfo[entity] = behavior;
+        });
+
+        var healthInfo = new Dictionary<Entity, Health>();
+        _world.Query(in _healthEntities, (Entity entity, ref Health health) =>
+        {
+            healthInfo[entity] = health;
+        });
+
+        var attackInfo = new Dictionary<Entity, int>();
+        _world.Query(in _attackEntities, (Entity entity, ref Attack attack) =>
+        {
+            attackInfo[entity] = attack.Damage;
+        });
+
         _world.Query(in _renderableEntities, (Entity entity, ref Position pos, ref RenderGlyph glyph) =>
         {
             var glyphDto = new GlyphDTO(glyph.Value.Glyph, glyph.Value.ForegroundArgb, glyph.Value.BackgroundArgb);
@@ -101,7 +125,31 @@ public class MapBase : IDisposable
                 itemMagnitude = info.Magnitude;
             }
 
-            entities.Add(new EntityDTO(pos.Value.X, pos.Value.Y, glyphDto, isBlocked, isPlayer, savedEntityId, itemKind, itemName, itemMagnitude));
+            MonsterAIType? behaviorType = null;
+            int behaviorRange = 0;
+            int behaviorSpecialEnergyCost = 0;
+            if (behaviorInfo.TryGetValue(entity, out var behavior))
+            {
+                behaviorType = behavior.Type;
+                behaviorRange = behavior.Range;
+                behaviorSpecialEnergyCost = behavior.SpecialEnergyCost;
+            }
+
+            int? healthCurrent = null;
+            int? healthMax = null;
+            if (healthInfo.TryGetValue(entity, out var health))
+            {
+                healthCurrent = health.Current;
+                healthMax = health.Max;
+            }
+
+            int? attackDamage = null;
+            if (attackInfo.TryGetValue(entity, out var attack))
+            {
+                attackDamage = attack;
+            }
+
+            entities.Add(new EntityDTO(pos.Value.X, pos.Value.Y, glyphDto, isBlocked, isPlayer, savedEntityId, itemKind, itemName, itemMagnitude, behaviorType, behaviorRange, behaviorSpecialEnergyCost, healthCurrent, healthMax, attackDamage));
         });
 
         _world.Query(in _effectEntities, (ref TimedEffect timed, ref EffectType type, ref EffectTarget target, ref EffectMagnitude magnitude) =>
@@ -150,8 +198,8 @@ public class MapBase : IDisposable
                     glyph,
                     new ActorControlled { Kind = ActorKind.Player },
                     new BlocksMovement(),
-                    new Health { Current = GameConstants.DefaultPlayerHealth, Max = GameConstants.DefaultPlayerHealth },
-                    new Attack { Damage = GameConstants.DefaultPlayerAttack },
+                    new Health { Current = e.Health ?? GameConstants.DefaultPlayerHealth, Max = e.MaxHealth ?? GameConstants.DefaultPlayerHealth },
+                    new Attack { Damage = e.Attack ?? GameConstants.DefaultPlayerAttack },
                     new Energy { Current = GameConstants.DefaultActionCost, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
             }
             else if (e.BlocksMovement)
@@ -160,10 +208,11 @@ public class MapBase : IDisposable
                 {
                     createdEntity = _world.Create(pos,
                         glyph,
-                        new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
-                        new Attack { Damage = e.Glyph.Glyph == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack },
+                        new Health { Current = e.Health ?? GameConstants.DefaultMonsterHealth, Max = e.MaxHealth ?? GameConstants.DefaultMonsterHealth },
+                        new Attack { Damage = e.Attack ?? (e.Glyph.Glyph == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack) },
                         new BlocksMovement(),
                         new ActorControlled { Kind = ActorKind.Monster },
+                        ResolveBehavior(e),
                         new Energy { Current = 0, GainPerTurn = GameConstants.DefaultEnergyPerTurn, ActionCost = GameConstants.DefaultActionCost });
                 }
                 else
@@ -588,6 +637,7 @@ public class MapBase : IDisposable
                 new Attack { Damage = Math.Max(1, definition.Damage) },
                 new BlocksMovement(),
                 new ActorControlled { Kind = ActorKind.Monster },
+                new MonsterBehavior { Type = definition.Behavior, Range = definition.Range, SpecialEnergyCost = definition.SpecialEnergyCost },
                 new Energy
                 {
                     Current = 0,
@@ -655,6 +705,7 @@ public class MapBase : IDisposable
                 new Attack { Damage = glyphCode == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack },
                 new BlocksMovement(),
                 new ActorControlled { Kind = ActorKind.Monster },
+                InferBehavior((char)glyphCode),
                 new Energy
                 {
                     Current = 0,
@@ -664,5 +715,31 @@ public class MapBase : IDisposable
 
             break;
         }
+    }
+
+    // Infer monster AI from a legacy glyph when no JSON definition provides behavior.
+    // Used only for the no-content fallback and for legacy saved maps.
+    private static MonsterBehavior InferBehavior(char glyph)
+    {
+        return glyph == 'D'
+            ? new MonsterBehavior { Type = MonsterAIType.Breath, Range = 3, SpecialEnergyCost = 300 }
+            : new MonsterBehavior { Type = MonsterAIType.Melee, Range = 1, SpecialEnergyCost = 0 };
+    }
+
+    // Restore a monster's behavior from the save DTO, falling back to glyph inference
+    // for legacy saves that predate behavior persistence.
+    private static MonsterBehavior ResolveBehavior(EntityDTO e)
+    {
+        if (e.Behavior is MonsterAIType type)
+        {
+            return new MonsterBehavior
+            {
+                Type = type,
+                Range = Math.Max(1, e.BehaviorRange),
+                SpecialEnergyCost = Math.Max(0, e.BehaviorSpecialEnergyCost)
+            };
+        }
+
+        return InferBehavior(e.Glyph.Glyph);
     }
 }

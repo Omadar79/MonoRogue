@@ -1,4 +1,5 @@
 using Arch.Core;
+using MonoRogue.Data;
 using SadRogue.Primitives;
 
 namespace MonoRogue.Core.Systems;
@@ -19,13 +20,13 @@ public sealed class MonsterAISystem
         _world = world;
         _spatial = spatial;
         _combat = combat;
-        _actorEntities = new QueryDescription().WithAll<Position, ActorControlled, Energy, RenderGlyph>();
+        _actorEntities = new QueryDescription().WithAll<Position, ActorControlled, Energy, MonsterBehavior>();
     }
 
     public int ProcessActors(Point playerPosition, Entity playerEntity)
     {
         var actionsExecuted = 0;
-        _world.Query(in _actorEntities, (Entity entity, ref Position monsterPosition, ref ActorControlled actor, ref Energy energy, ref RenderGlyph glyph) =>
+        _world.Query(in _actorEntities, (Entity entity, ref Position monsterPosition, ref ActorControlled actor, ref Energy energy, ref MonsterBehavior behavior) =>
         {
             if (actor.Kind != ActorKind.Monster)
             {
@@ -35,13 +36,13 @@ public sealed class MonsterAISystem
             var actionsForThisMonster = 0;
             while (actionsForThisMonster < GameConstants.MaxMonsterActionsPerTurn)
             {
-                var action = PlanMonsterAction(monsterPosition.Value, playerPosition, glyph.Value, energy);
+                var action = PlanMonsterAction(monsterPosition.Value, playerPosition, behavior, energy);
                 if (action.EnergyCost <= 0 || energy.Current < action.EnergyCost)
                 {
                     break;
                 }
 
-                if (ExecuteMonsterAction(entity, ref monsterPosition, action, playerPosition, playerEntity))
+                if (ExecuteMonsterAction(entity, ref monsterPosition, action, playerEntity))
                 {
                     actionsExecuted++;
                 }
@@ -92,14 +93,12 @@ public sealed class MonsterAISystem
         }
     }
 
-    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, CoreGlyph glyph, Energy energy)
+    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, MonsterBehavior behavior, Energy energy)
     {
         var delta = playerPosition - monsterPosition;
         var stepX = Math.Sign(delta.X);
         var stepY = Math.Sign(delta.Y);
         var distance = Math.Abs(delta.X) + Math.Abs(delta.Y);
-
-        var glyphChar = glyph.Glyph;
 
         // Adjacent monsters strike directly instead of stepping into the player.
         if (distance == 1)
@@ -107,9 +106,9 @@ public sealed class MonsterAISystem
             return new MonsterActionPlan(MonsterActionType.MeleeAttack, Point.None, Math.Max(1, energy.ActionCost));
         }
 
-        if (glyphChar == 'D' && distance <= 3)
+        if (behavior.Type == MonsterAIType.Breath && distance <= behavior.Range)
         {
-            return new MonsterActionPlan(MonsterActionType.BreathAttack, Point.None, 300);
+            return new MonsterActionPlan(MonsterActionType.BreathAttack, Point.None, Math.Max(1, behavior.SpecialEnergyCost));
         }
 
         if (stepX != 0)
@@ -125,7 +124,7 @@ public sealed class MonsterAISystem
         return new MonsterActionPlan(MonsterActionType.Wait, Point.None, Math.Max(1, energy.ActionCost));
     }
 
-    private bool ExecuteMonsterAction(Entity monsterEntity, ref Position monsterPosition, MonsterActionPlan action, Point playerPosition, Entity playerEntity)
+    private bool ExecuteMonsterAction(Entity monsterEntity, ref Position monsterPosition, MonsterActionPlan action, Entity playerEntity)
     {
         switch (action.Type)
         {
@@ -147,11 +146,6 @@ public sealed class MonsterAISystem
             }
             case MonsterActionType.BreathAttack:
             {
-                if (!IsInBreathRange(monsterPosition.Value, playerPosition, 3))
-                {
-                    return false;
-                }
-
                 var damage = _combat.GetAttackDamage(monsterEntity, GameConstants.DragonAttack);
                 return _combat.ApplyDamage(playerEntity, damage) > 0;
             }
@@ -164,11 +158,5 @@ public sealed class MonsterAISystem
     private bool CanMonsterOccupy(Point destination, Point currentPosition)
     {
         return destination != currentPosition && _spatial.CanOccupy(destination);
-    }
-
-    private static bool IsInBreathRange(Point origin, Point target, int range)
-    {
-        var distance = Math.Abs(origin.X - target.X) + Math.Abs(origin.Y - target.Y);
-        return distance <= range;
     }
 }

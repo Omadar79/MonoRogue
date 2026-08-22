@@ -5,22 +5,10 @@ using SadRogue.Primitives;
 
 namespace MonoRogue.Tests;
 
-public static class MonsterDataLoaderTests
+public class MonsterDataLoaderTests
 {
-    public static void RunAll()
-    {
-        LoadDefinitions_FromJsonFile_ReturnsMonsterDefinitions();
-        LoadItemDefinitions_FromJsonFile_ReturnsItemDefinitions();
-        Player_CanBeTreatedAsEntity();
-        Player_CanActRepeatedlyWhilePoisoned();
-        Player_CanRestAndContinueActingWhilePoisoned();
-        Player_CanAttackAndKillMonsterByBumpingIntoIt();
-        Monster_MeleeAttackDamagesPlayer();
-        Player_CanPickUpItemByWalkingOntoIt();
-        Player_CanUsePotionToHeal();
-    }
-
-    public static void LoadDefinitions_FromJsonFile_ReturnsMonsterDefinitions()
+    [Fact]
+    public void LoadDefinitions_FromJsonFile_ReturnsMonsterDefinitions()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
@@ -56,7 +44,42 @@ public static class MonsterDataLoaderTests
         if (definitions[0].Damage != 3) throw new InvalidOperationException("Expected damage of 3.");
     }
 
-    public static void LoadItemDefinitions_FromJsonFile_ReturnsItemDefinitions()
+    [Fact]
+    public void LoadDefinitions_FromJsonFile_ParsesMonsterBehavior()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var path = Path.Combine(tempDir, "monsters.json");
+        File.WriteAllText(path, """
+        {
+          "monsters": [
+            {
+              "name": "dragon",
+              "glyph": "D",
+              "foregroundArgb": -23296,
+              "backgroundArgb": -16777216,
+              "gainPerTurn": 100,
+              "actionCost": 100,
+              "damage": 5,
+              "behavior": "Breath",
+              "range": 3,
+              "specialEnergyCost": 300
+            }
+          ]
+        }
+        """);
+
+        var definitions = MonsterDataLoader.LoadDefinitions(path);
+
+        if (definitions.Count != 1) throw new InvalidOperationException($"Expected 1 monster definition but got {definitions.Count}.");
+        if (definitions[0].Behavior != MonsterAIType.Breath) throw new InvalidOperationException("Expected Breath behavior.");
+        if (definitions[0].Range != 3) throw new InvalidOperationException("Expected range of 3.");
+        if (definitions[0].SpecialEnergyCost != 300) throw new InvalidOperationException("Expected specialEnergyCost of 300.");
+    }
+
+    [Fact]
+    public void LoadItemDefinitions_FromJsonFile_ReturnsItemDefinitions()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
@@ -92,7 +115,8 @@ public static class MonsterDataLoaderTests
         if (definitions[0].Magnitude != 8) throw new InvalidOperationException("Expected magnitude of 8.");
     }
 
-    public static void Player_CanBeTreatedAsEntity()
+    [Fact]
+    public void Player_CanBeTreatedAsEntity()
     {
         using var map = new MapBase(10, 10);
 
@@ -104,19 +128,13 @@ public static class MonsterDataLoaderTests
         if (count <= 0) throw new InvalidOperationException($"Expected active effect count > 0 but got {count}.");
     }
 
-    public static void Player_CanActRepeatedlyWhilePoisoned()
+    [Fact]
+    public void Player_CanActRepeatedlyWhilePoisoned()
     {
         using var map = new MapBase(10, 10);
 
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
-        var path = new HashSet<Point>
-        {
-            new(start.X + 1, start.Y),
-            new(start.X + 2, start.Y),
-            new(start.X + 3, start.Y)
-        };
-
-        ClearBlockingEntities(map, path);
+        ClearAllExceptPlayer(map);
 
         var applied = map.TryApplyPoisonToPlayer(500, 100, 1);
         if (!applied) throw new InvalidOperationException("Expected to apply poison to player.");
@@ -143,12 +161,13 @@ public static class MonsterDataLoaderTests
         }
     }
 
-    public static void Player_CanRestAndContinueActingWhilePoisoned()
+    [Fact]
+    public void Player_CanRestAndContinueActingWhilePoisoned()
     {
         using var map = new MapBase(10, 10);
 
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
-        ClearBlockingEntities(map, new HashSet<Point> { new(start.X + 1, start.Y) });
+        ClearAllExceptPlayer(map);
 
         var applied = map.TryApplyPoisonToPlayer(500, 100, 1);
         if (!applied) throw new InvalidOperationException("Expected to apply poison to player.");
@@ -188,7 +207,8 @@ public static class MonsterDataLoaderTests
         }
     }
 
-    public static void Player_CanAttackAndKillMonsterByBumpingIntoIt()
+    [Fact]
+    public void Player_CanAttackAndKillMonsterByBumpingIntoIt()
     {
         using var map = new MapBase(10, 10);
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
@@ -220,7 +240,8 @@ public static class MonsterDataLoaderTests
         }
     }
 
-    public static void Monster_MeleeAttackDamagesPlayer()
+    [Fact]
+    public void Monster_MeleeAttackDamagesPlayer()
     {
         using var map = new MapBase(10, 10);
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
@@ -240,7 +261,8 @@ public static class MonsterDataLoaderTests
         }
     }
 
-    public static void Player_CanPickUpItemByWalkingOntoIt()
+    [Fact]
+    public void Player_CanPickUpItemByWalkingOntoIt()
     {
         using var map = new MapBase(10, 10);
         ClearAllExceptPlayer(map);
@@ -259,7 +281,8 @@ public static class MonsterDataLoaderTests
         if (potionCount != 1) throw new InvalidOperationException($"Expected 1 potion in inventory but got {potionCount}.");
     }
 
-    public static void Player_CanUsePotionToHeal()
+    [Fact]
+    public void Player_CanUsePotionToHeal()
     {
         using var map = new MapBase(10, 10);
         ClearAllExceptPlayer(map);
@@ -333,6 +356,7 @@ public static class MonsterDataLoaderTests
             new Health { Current = health, Max = health },
             new BlocksMovement(),
             new ActorControlled { Kind = ActorKind.Monster },
+            new MonsterBehavior { Type = MonsterAIType.Melee },
             new Energy { Current = 0, GainPerTurn = 100, ActionCost = 100 },
             new Attack { Damage = damage });
     }

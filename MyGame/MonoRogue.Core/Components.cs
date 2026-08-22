@@ -72,6 +72,15 @@ public struct Attack
     public int Damage;
 }
 
+// Describes how a monster plans its actions. Populated from MonsterDefinition so
+// content can drive AI instead of hardcoding behavior by glyph character.
+public struct MonsterBehavior
+{
+    public MonsterAIType Type;
+    public int Range;
+    public int SpecialEnergyCost;
+}
+
 // Marks an entity as a pickup item lying on the map.
 public struct Item
 {

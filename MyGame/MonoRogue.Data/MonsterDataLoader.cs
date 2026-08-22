@@ -2,6 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace MonoRogue.Data;
 
+public enum MonsterAIType
+{
+    Melee,
+    Breath
+}
+
 public sealed record MonsterDefinition(
     string Name,
     char Glyph,
@@ -9,7 +15,10 @@ public sealed record MonsterDefinition(
     int BackgroundArgb,
     int GainPerTurn,
     int ActionCost,
-    int Damage)
+    int Damage,
+    MonsterAIType Behavior = MonsterAIType.Melee,
+    int Range = 1,
+    int SpecialEnergyCost = 0)
 {
     public static MonsterDefinition Default(string name, char glyph) =>
         new(name, glyph, unchecked((int)0xFFFF0000), unchecked((int)0xFF000000), 100, 100, 3);
@@ -35,7 +44,10 @@ public static class MonsterDataLoader
                 m.BackgroundArgb,
                 Math.Max(1, m.GainPerTurn),
                 Math.Max(1, m.ActionCost),
-                Math.Max(1, m.Damage)))
+                Math.Max(1, m.Damage),
+                m.Behavior,
+                Math.Max(1, m.Range),
+                Math.Max(0, m.SpecialEnergyCost)))
             .ToList();
     }
 
@@ -50,7 +62,10 @@ public static class MonsterDataLoader
                 m.BackgroundArgb,
                 Math.Max(1, m.GainPerTurn),
                 Math.Max(1, m.ActionCost),
-                Math.Max(1, m.Damage)))
+                Math.Max(1, m.Damage),
+                m.Behavior,
+                Math.Max(1, m.Range),
+                Math.Max(0, m.SpecialEnergyCost)))
             .ToList();
     }
 }

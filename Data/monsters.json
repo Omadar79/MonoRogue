@@ -7,7 +7,8 @@
       "backgroundArgb": -16777216,
       "gainPerTurn": 100,
       "actionCost": 100,
-      "damage": 3
+      "damage": 3,
+      "behavior": "Melee"
     },
     {
       "name": "dragon",
@@ -16,7 +17,10 @@
       "backgroundArgb": -16777216,
       "gainPerTurn": 100,
       "actionCost": 100,
-      "damage": 5
+      "damage": 5,
+      "behavior": "Breath",
+      "range": 3,
+      "specialEnergyCost": 300
     }
   ]
 }

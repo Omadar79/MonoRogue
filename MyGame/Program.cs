@@ -11,14 +11,6 @@ public static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        // Run lightweight in-project verification tests when requested.
-        if (args.Contains("--test-content"))
-        {
-            MonoRogue.Tests.MonsterDataLoaderTests.RunAll();
-            System.Console.WriteLine("Content loader tests passed.");
-            return;
-        }
-
         // Create the game main logic object
         var gameMain = new GameMain();
 
