@@ -1,6 +1,8 @@
 using MonoRogue.Core;
 using SadConsole;
 using SadConsole.Input;
+using SadConsole.Transitions;
+using SadConsole.UI;
 using Game = SadConsole.Game;
 using Color = SadRogue.Primitives.Color;
 using Console = System.Console;
@@ -53,6 +55,7 @@ public class RootScreen : ScreenObject
         _rightPanel.UseKeyboard = false;
         _rightPanel.Position = new SadRogue.Primitives.Point(mapWidth, 0);
         DrawRightPanel();
+        Border.CreateForSurface(_rightPanel, "Status");
         Children.Add(_rightPanel);
 
         // Create a bottom message console that spans map width and sits under the map
@@ -61,6 +64,7 @@ public class RootScreen : ScreenObject
         _messageConsole.UseKeyboard = false;
         _messageConsole.Position = new SadRogue.Primitives.Point(0, mapHeight);
         DrawMessageConsole();
+        Border.CreateForSurface(_messageConsole, "Log");
         Children.Add(_messageConsole);
 
         // Create a pause overlay that will be shown when the game is paused
@@ -117,7 +121,7 @@ public class RootScreen : ScreenObject
                     if (choice == "New Game")
                     {
                         _game.StartNewGame(_mapWidth, _mapHeight);
-                        _menuOverlay.IsVisible = false;
+                        FadeOut(_menuOverlay);
                         DrawMap();
                         DrawRightPanel();
                     }
@@ -147,7 +151,7 @@ public class RootScreen : ScreenObject
                         {
                             if (_game.LoadMap("saved_map.json", _mapWidth, _mapHeight))
                             {
-                                _menuOverlay.IsVisible = false;
+                                FadeOut(_menuOverlay);
                                 DrawMap();
                                 DrawRightPanel();
                                 AppendMessage($"Loaded map. Restored active effects: {_game.CurrentMap!.GetActiveEffectCount()}");
@@ -186,12 +190,16 @@ public class RootScreen : ScreenObject
                 case InputType.TogglePause:
                     _game.TogglePause();
 
-                    // Show or hide the pause overlay based on game state
-                    _pauseOverlay.IsVisible = (_game.CurrentState == GameState.Paused);
-
-                    if (_pauseOverlay.IsVisible)
+                    // Fade the pause overlay in or out based on the game state.
+                    if (_game.CurrentState == GameState.Paused)
                     {
                         DrawPauseMessage();
+                        _pauseOverlay.IsVisible = true;
+                        FadeIn(_pauseOverlay);
+                    }
+                    else
+                    {
+                        FadeOut(_pauseOverlay);
                     }
                     handled = true;
                     break;
@@ -312,11 +320,9 @@ public class RootScreen : ScreenObject
         return handled;
     }
 
-    private void DrawPauseMessage()
+    private static void ClearSurface(ScreenSurface screen)
     {
-        var surface = _pauseOverlay.Surface;
-
-        // Fill overlay with a solid background
+        var surface = screen.Surface;
         for (int y = 0; y < surface.Height; y++)
         {
             for (int x = 0; x < surface.Width; x++)
@@ -326,20 +332,24 @@ public class RootScreen : ScreenObject
                 surface[x, y].Background = Color.Black;
             }
         }
+    }
 
+    private static readonly TimeSpan FadeDuration = TimeSpan.FromMilliseconds(200);
 
-        // Pause overlay: do not draw panel separators here (they are rendered by the right panel and message console)
+    private static void FadeIn(ScreenSurface surface) =>
+        surface.SadComponents.Add(new FadeIn(surface, FadeDuration, null));
+
+    private static void FadeOut(ScreenSurface surface) =>
+        surface.SadComponents.Add(new FadeOut(surface, FadeDuration, null) { HideObject = true });
+
+    private void DrawPauseMessage()
+    {
+        ClearSurface(_pauseOverlay);
 
         const string msg = "PAUSED - Press Escape to resume";
-        int msgX = Math.Max(0, (surface.Width - msg.Length) / 2);
-        int msgY = Math.Max(0, surface.Height / 2);
-
-        for (int i = 0; i < msg.Length && msgX + i < surface.Width; i++)
-        {
-            surface[msgX + i, msgY].Glyph = msg[i];
-            surface[msgX + i, msgY].Foreground = Color.Yellow;
-            surface[msgX + i, msgY].Background = Color.DarkBlue;
-        }
+        var surface = _pauseOverlay.Surface;
+        _pauseOverlay.Print(Math.Max(0, (surface.Width - msg.Length) / 2), Math.Max(0, surface.Height / 2),
+            msg, Color.Yellow, Color.DarkBlue);
 
         _pauseOverlay.IsDirty = true;
     }
@@ -349,6 +359,7 @@ public class RootScreen : ScreenObject
         _game.GameOver();
         DrawGameOverMessage();
         _gameOverOverlay.IsVisible = true;
+        FadeIn(_gameOverOverlay);
         AppendMessage("You die...");
     }
 
@@ -358,34 +369,19 @@ public class RootScreen : ScreenObject
         _pauseOverlay.IsVisible = false;
         _messages.Clear();
         DrawMessageConsole();
-        _menuOverlay.IsVisible = true;
         DrawMainMenu();
+        _menuOverlay.IsVisible = true;
+        FadeIn(_menuOverlay);
     }
 
     private void DrawGameOverMessage()
     {
-        var surface = _gameOverOverlay.Surface;
-
-        for (int y = 0; y < surface.Height; y++)
-        {
-            for (int x = 0; x < surface.Width; x++)
-            {
-                surface[x, y].Glyph = ' ';
-                surface[x, y].Foreground = Color.White;
-                surface[x, y].Background = Color.Black;
-            }
-        }
+        ClearSurface(_gameOverOverlay);
 
         const string msg = "GAME OVER - You died (press Enter to return to menu)";
-        int msgX = Math.Max(0, (surface.Width - msg.Length) / 2);
-        int msgY = Math.Max(0, surface.Height / 2);
-
-        for (int i = 0; i < msg.Length && msgX + i < surface.Width; i++)
-        {
-            surface[msgX + i, msgY].Glyph = msg[i];
-            surface[msgX + i, msgY].Foreground = Color.Red;
-            surface[msgX + i, msgY].Background = Color.DarkRed;
-        }
+        var surface = _gameOverOverlay.Surface;
+        _gameOverOverlay.Print(Math.Max(0, (surface.Width - msg.Length) / 2), Math.Max(0, surface.Height / 2),
+            msg, Color.Red, Color.DarkRed);
 
         _gameOverOverlay.IsDirty = true;
     }
@@ -394,15 +390,7 @@ public class RootScreen : ScreenObject
     {
         var surface = _mapSurface.Surface;
 
-        for (int y = 0; y < surface.Height; y++)
-        {
-            for (int x = 0; x < surface.Width; x++)
-            {
-                surface[x, y].Glyph = ' ';
-                surface[x, y].Foreground = Color.White;
-                surface[x, y].Background = Color.Black;
-            }
-        }
+        ClearSurface(_mapSurface);
 
         Color[] colors = new[] { Color.LightGreen, Color.Coral, Color.CornflowerBlue, Color.DarkGreen };
         float[] colorStops = new[] { 0f, 0.35f, 0.75f, 1f };
@@ -437,79 +425,45 @@ public class RootScreen : ScreenObject
     private void DrawRightPanel()
     {
         var surface = _rightPanel.Surface;
-        for (int y = 0; y < surface.Height; y++)
-        {
-            for (int x = 0; x < surface.Width; x++)
-            {
-                surface[x, y].Glyph = ' ';
-                surface[x, y].Foreground = Color.White;
-                surface[x, y].Background = Color.Black;
-            }
-        }
+        ClearSurface(_rightPanel);
 
-        // Draw vertical separator at the left edge of the right panel to separate map and panel
-        for (int y = 0; y < surface.Height; y++)
-        {
-            surface[0, y].Glyph = '|';
-            surface[0, y].Foreground = Color.Gray;
-            surface[0, y].Background = Color.Black;
-        }
-
-        // Keep column 0 reserved for the separator; render panel content starting at column 1.
+        // Content is inset by one cell on every side so it stays inside the border
+        // that was added around this panel in the constructor.
         int contentX = 1;
-        int contentWidth = Math.Max(0, surface.Width - contentX);
-
-        const string stats = "Stats";
-        int sx = contentX + Math.Max(0, (contentWidth - stats.Length) / 2);
-        for (int i = 0; i < stats.Length && sx + i < surface.Width; i++)
-        {
-            surface[sx + i, 0].Glyph = stats[i];
-            surface[sx + i, 0].Foreground = Color.Yellow;
-            surface[sx + i, 0].Background = Color.DarkBlue;
-        }
+        int contentWidth = Math.Max(0, surface.Width - contentX - 1);
+        var line = 1;
 
         // Show a simple player state if present
         var map = _game.CurrentMap;
         var st = map?.ExtractPlayerState();
-        var line = 2;
         if (st != null)
         {
-            var pos = $"Pos: {st.X},{st.Y}";
-            for (int i = 0; i < pos.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = pos[i];
+            _rightPanel.Print(contentX, line, $"Pos: {st.X},{st.Y}");
             line += 2;
 
             var (hp, maxHp) = map!.GetPlayerHealth();
-            var hpText = $"HP: {hp}/{maxHp}";
-            for (int i = 0; i < hpText.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = hpText[i];
+            _rightPanel.Print(contentX, line, $"HP: {hp}/{maxHp}");
             line += 2;
 
-            var goldText = $"Gold: {map!.GetGold()}";
-            for (int i = 0; i < goldText.Length && i < contentWidth; i++) surface[contentX + i, line].Glyph = goldText[i];
+            _rightPanel.Print(contentX, line, $"Gold: {map!.GetGold()}");
             line += 2;
         }
 
         const string inv = "Inventory";
-        int ix = contentX + Math.Max(0, (contentWidth - inv.Length) / 2);
-        for (int i = 0; i < inv.Length && ix + i < surface.Width; i++)
-        {
-            surface[ix + i, line].Glyph = inv[i];
-            surface[ix + i, line].Foreground = Color.Yellow;
-            surface[ix + i, line].Background = Color.DarkBlue;
-        }
+        _rightPanel.Print(contentX + Math.Max(0, (contentWidth - inv.Length) / 2), line,
+            inv, Color.Yellow, Color.DarkBlue);
 
         // Render inventory stacks below the "Inventory" heading.
         var inventory = map?.Inventory;
         if (inventory == null || inventory.Count == 0)
         {
-            const string empty = "(empty)";
-            for (int c = 0; c < empty.Length && c < contentWidth; c++) surface[contentX + c, line + 1].Glyph = empty[c];
+            _rightPanel.Print(contentX, line + 1, "(empty)");
         }
         else
         {
-            for (int r = 0; r < inventory.Count && line + 1 + r < surface.Height; r++)
+            for (int r = 0; r < inventory.Count && line + 1 + r < surface.Height - 1; r++)
             {
-                var s = $"{inventory[r].Name} x{inventory[r].Count}";
-                for (int c = 0; c < s.Length && c < contentWidth; c++) surface[contentX + c, line + 1 + r].Glyph = s[c];
+                _rightPanel.Print(contentX, line + 1 + r, $"{inventory[r].Name} x{inventory[r].Count}");
             }
         }
 
@@ -519,39 +473,19 @@ public class RootScreen : ScreenObject
     private void DrawMessageConsole()
     {
         var surface = _messageConsole.Surface;
-        for (int y = 0; y < surface.Height; y++)
-        {
-            for (int x = 0; x < surface.Width; x++)
-            {
-                surface[x, y].Glyph = ' ';
-                surface[x, y].Foreground = Color.White;
-                surface[x, y].Background = Color.Black;
-            }
-        }
+        ClearSurface(_messageConsole);
 
-        // Draw a horizontal separator at the top of the message console
-        for (int x = 0; x < surface.Width; x++)
-        {
-            surface[x, 0].Glyph = '_';
-            surface[x, 0].Foreground = Color.Gray;
-            surface[x, 0].Background = Color.Black;
-        }
-
-        // Render messages starting at row 1 (below the separator)
-        int maxLines = Math.Max(0, surface.Height - 1);
+        // Render messages inside the border that was added around this console in the constructor.
+        int maxLines = Math.Max(0, surface.Height - 2);
         int start = Math.Max(0, _messages.Count - maxLines);
         int row = 1;
 
         for (int i = start; i < _messages.Count; i++)
         {
-            var msg = _messages[i];
-            for (int c = 0; c < msg.Length && c < surface.Width; c++)
-            {
-                surface[c, row].Glyph = msg[c];
-            }
+            _messageConsole.Print(1, row, _messages[i]);
             row++;
 
-            if (row >= surface.Height) break;
+            if (row > surface.Height - 2) break;
         }
 
         _messageConsole.IsDirty = true;
@@ -593,26 +527,12 @@ public class RootScreen : ScreenObject
     private void DrawMainMenu()
     {
         var surface = _menuOverlay.Surface;
-        for (int y = 0; y < surface.Height; y++)
-        {
-            for (int x = 0; x < surface.Width; x++)
-            {
-                surface[x, y].Glyph = ' ';
-                surface[x, y].Foreground = Color.White;
-                surface[x, y].Background = Color.Black;
-            }
-        }
+        ClearSurface(_menuOverlay);
 
         const string title = "MonoRogue";
         int titleX = Math.Max(0, (surface.Width - title.Length) / 2);
         int titleY = Math.Max(0, surface.Height / 3);
-
-        for (int i = 0; i < title.Length && titleX + i < surface.Width; i++)
-        {
-            surface[titleX + i, titleY].Glyph = title[i];
-            surface[titleX + i, titleY].Foreground = Color.Yellow;
-            surface[titleX + i, titleY].Background = Color.DarkBlue;
-        }
+        _menuOverlay.Print(titleX, titleY, title, Color.Yellow, Color.DarkBlue);
 
         int menuStartY = titleY + 3;
         for (int idx = 0; idx < _menuOptions.Length; idx++)
@@ -623,13 +543,7 @@ public class RootScreen : ScreenObject
 
             var fg = idx == _menuSelectedIndex ? Color.Black : Color.White;
             var bg = idx == _menuSelectedIndex ? Color.White : Color.Black;
-
-            for (int i = 0; i < opt.Length && optX + i < surface.Width; i++)
-            {
-                surface[optX + i, y].Glyph = opt[i];
-                surface[optX + i, y].Foreground = fg;
-                surface[optX + i, y].Background = bg;
-            }
+            _menuOverlay.Print(optX, y, opt, fg, bg);
         }
 
         _menuOverlay.IsDirty = true;
