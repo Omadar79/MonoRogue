@@ -1,11 +1,16 @@
 # MonoRogue
 
-A turn-based roguelike built on .NET 10, MonoGame, SadConsole, and Arch ECS.
+A turn-based roguelike built on .NET 10, MonoGame, SadConsole, RogueSharp, and Arch ECS.
+
+I wanted to create a roguelike that was easy to read and understand, with a focus on clean architecture and testability. 
+The game is designed to be simple, but extensible, so that new features can be added without breaking existing code.
+
+NOTE: I used AI to help me create tests and separate the SadConsole UI from the game logic, so that the game can be tested without a UI.
 
 ## Prerequisites
 
 - [.NET SDK 10.0](https://dotnet.microsoft.com/) (developed against `10.0.302`)
-- A terminal/window host capable of running a MonoGame DesktopGL app (Windows supported)
+- A terminal/window host capable of running a MonoGame DesktopGL app (Windows, Linux, macOS)
 
 ## Build & run
 

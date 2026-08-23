@@ -61,7 +61,6 @@ public class RootScreen : ScreenObject
         _rightPanel.UseKeyboard = false;
         _rightPanel.Position = new SadRogue.Primitives.Point(mapWidth, 0);
         DrawRightPanel();
-        Border.CreateForSurface(_rightPanel, "Status");
         Children.Add(_rightPanel);
 
         // Create a bottom message console that spans map width and sits under the map
@@ -70,7 +69,6 @@ public class RootScreen : ScreenObject
         _messageConsole.UseKeyboard = false;
         _messageConsole.Position = new SadRogue.Primitives.Point(0, mapHeight);
         DrawMessageConsole();
-        Border.CreateForSurface(_messageConsole, "Log");
         Children.Add(_messageConsole);
 
         // Create a pause overlay that will be shown when the game is paused
@@ -351,6 +349,60 @@ public class RootScreen : ScreenObject
             }
         }
     }
+
+    // Draws a frame border inside the surface's own outer cells (rather than SadConsole's
+    // Border.CreateForSurface, which draws 1 cell outside and overlaps adjacent surfaces).
+    // This keeps the map viewport fully visible with no clipping.
+    private static void DrawBoxBorder(ScreenSurface screen, string title)
+    {
+        var surface = screen.Surface;
+        int width = surface.Width;
+        int height = surface.Height;
+        if (width < 2 || height < 2)
+        {
+            return;
+        }
+
+        var borderColor = Color.Gray;
+
+        // Corners.
+        surface[0, 0].Glyph = '+';
+        surface[width - 1, 0].Glyph = '+';
+        surface[0, height - 1].Glyph = '+';
+        surface[width - 1, height - 1].Glyph = '+';
+
+        // Horizontal edges.
+        for (int x = 1; x < width - 1; x++)
+        {
+            surface[x, 0].Glyph = '-';
+            surface[x, height - 1].Glyph = '-';
+        }
+
+        // Vertical edges.
+        for (int y = 1; y < height - 1; y++)
+        {
+            surface[0, y].Glyph = '|';
+            surface[width - 1, y].Glyph = '|';
+        }
+
+        // Tint the frame.
+        for (int x = 0; x < width; x++)
+        {
+            surface[x, 0].Foreground = borderColor;
+            surface[x, height - 1].Foreground = borderColor;
+        }
+        for (int y = 0; y < height; y++)
+        {
+            surface[0, y].Foreground = borderColor;
+            surface[width - 1, y].Foreground = borderColor;
+        }
+
+        // Title rendered into the top edge.
+        if (!string.IsNullOrEmpty(title) && width > 3)
+        {
+            screen.Print(2, 0, title, borderColor, Color.Black);
+        }
+    }
     
     private static void FadeIn(ScreenSurface surface, long duration = 200)
     {
@@ -428,17 +480,28 @@ public class RootScreen : ScreenObject
         var map = _game.GetCurrentSession();
         if (map != null)
         {
+            var viewWidth = surface.Width;
+            var viewHeight = surface.Height;
+
+            // Center the camera on the player, clamped so the view stays within the world.
+            var player = map.ExtractPlayerState();
+            var focus = player != null ? new SadRogue.Primitives.Point(player.X, player.Y) : new SadRogue.Primitives.Point(0, 0);
+            var topLeft = Camera.ComputeTopLeft(viewWidth, viewHeight, map.GetWidth(), map.GetHeight(), focus);
+
             var cells = map.GetRenderSnapshot();
             foreach (var cell in cells)
             {
-                if (cell.X < 0 || cell.Y < 0 || cell.X >= surface.Width || cell.Y >= surface.Height)
+                var screenX = cell.X - topLeft.X;
+                var screenY = cell.Y - topLeft.Y;
+
+                if (screenX < 0 || screenY < 0 || screenX >= viewWidth || screenY >= viewHeight)
                 {
                     continue;
                 }
 
-                surface[cell.X, cell.Y].Glyph = cell.Glyph.Glyph;
-                surface[cell.X, cell.Y].Foreground = ColorConverter.FromArgb(cell.Glyph.ForegroundArgb);
-                surface[cell.X, cell.Y].Background = ColorConverter.FromArgb(cell.Glyph.BackgroundArgb);
+                surface[screenX, screenY].Glyph = cell.Glyph.Glyph;
+                surface[screenX, screenY].Foreground = ColorConverter.FromArgb(cell.Glyph.ForegroundArgb);
+                surface[screenX, screenY].Background = ColorConverter.FromArgb(cell.Glyph.BackgroundArgb);
             }
         }
 
@@ -449,8 +512,9 @@ public class RootScreen : ScreenObject
     {
         var surface = _rightPanel.Surface;
         ClearSurface(_rightPanel);
+        DrawBoxBorder(_rightPanel, "Status");
 
-        // Content is inset by one cell on every side, so it stays inside the border added in the constructor.
+        // Content is inset by one cell on every side, so it stays inside the border.
         var contentX = 1;
         var contentWidth = Math.Max(0, surface.Width - contentX - 1);
         var line = 1;
@@ -504,8 +568,9 @@ public class RootScreen : ScreenObject
     {
         var surface = _messageConsole.Surface;
         ClearSurface(_messageConsole);
+        DrawBoxBorder(_messageConsole, "Log");
 
-        // Render messages inside the border that was added around this console in the constructor.
+        // Render messages inside the border.
         int maxLines = Math.Max(0, surface.Height - 2);
         int start = Math.Max(0, _messages.Count - maxLines);
         int row = 1;

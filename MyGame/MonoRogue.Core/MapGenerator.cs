@@ -27,6 +27,7 @@ public sealed class MapGenerator
 
     public void GenerateNewMap()
     {
+        CreateBorderWalls();
         CreateTreasure();
 
         var itemTemplates = ItemDataLoader.LoadDefinitionsFromDefaultSearchPaths();
@@ -47,6 +48,23 @@ public sealed class MapGenerator
             {
                 CreateMonster(template);
             }
+        }
+    }
+
+    // Carve the static layout: currently a single open room surrounded by border walls.
+    // This is the seam where procedural layout generators will plug in later.
+    private void CreateBorderWalls()
+    {
+        var tiles = _spatial.GetTileMap();
+        for (int x = 0; x < _mapWidth; x++)
+        {
+            tiles.SetTile(x, 0, TileKind.Wall);
+            tiles.SetTile(x, _mapHeight - 1, TileKind.Wall);
+        }
+        for (int y = 0; y < _mapHeight; y++)
+        {
+            tiles.SetTile(0, y, TileKind.Wall);
+            tiles.SetTile(_mapWidth - 1, y, TileKind.Wall);
         }
     }
 

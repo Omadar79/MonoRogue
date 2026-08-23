@@ -30,4 +30,8 @@ public static class GameConstants
     public const int ArgbRed = unchecked((int)0xFFFF0000);
     public const int ArgbYellow = unchecked((int)0xFFFFFF00);
     public const int ArgbOrangeRed = unchecked((int)0xFFFF4500);
+
+    // Terrain glyph colors: walls use a lighter gray, floors a darker gray.
+    public const int ArgbGray = unchecked((int)0xFF808080);
+    public const int ArgbDarkGray = unchecked((int)0xFF404040);
 }

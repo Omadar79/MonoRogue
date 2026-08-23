@@ -4,33 +4,39 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Owns map bounds and movement-blocking lookups so movement systems can validate
-/// destinations without depending on <see cref="GameSession"/>.
+/// Owns map bounds, the static terrain grid (<see cref="TileMap"/>), and movement-blocking
+/// lookups so movement systems can validate destinations without depending on <see cref="GameSession"/>.
 /// </summary>
 public sealed class SpatialMap
 {
     private readonly World _world;
     private readonly QueryDescription _blockingEntities;
-    private readonly int _width;
-    private readonly int _height;
+    private readonly TileMap _tiles;
 
     public SpatialMap(World world, int width, int height)
     {
         _world = world;
-        _width = width;
-        _height = height;
+        _tiles = new TileMap(width, height);
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
     }
 
-    public int GetWidth() => _width;
-    public int GetHeight() => _height;
-    public Point GetCenter() => new(_width / 2, _height / 2);
+    public int GetWidth() => _tiles.GetWidth();
+    public int GetHeight() => _tiles.GetHeight();
+    public Point GetCenter() => new(_tiles.GetWidth() / 2, _tiles.GetHeight() / 2);
 
-    public bool IsValidCell(Point position) =>
-        position.X >= 0 && position.Y >= 0 && position.X < _width && position.Y < _height;
+    /// <summary>The static terrain grid backing this map.</summary>
+    public TileMap GetTileMap() => _tiles;
+
+    public bool IsValidCell(Point position) => _tiles.Contains(position);
 
     public bool IsBlocked(Point position)
     {
+        // Walls and out-of-bounds cells are impassable regardless of entities.
+        if (!_tiles.Contains(position) || !_tiles.IsWalkable(position))
+        {
+            return true;
+        }
+
         var blocked = false;
         _world.Query(in _blockingEntities, (ref Position other) =>
         {

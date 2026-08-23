@@ -77,10 +77,24 @@ public class GameSession : IDisposable
 
     public void LoadMap(MapData? mapData) => _serializer.Load(mapData);
 
-    // Snapshot of every renderable entity (position + glyph) for the UI to draw.
+    // Snapshot of the map for the UI to draw: static terrain (walls/floors) first, then
+    // entities on top so actors/items are drawn over their tile.
     public IReadOnlyList<RenderCell> GetRenderSnapshot()
     {
         var cells = new List<RenderCell>();
+
+        var tiles = _spatial.GetTileMap();
+        for (int y = 0; y < tiles.GetHeight(); y++)
+        {
+            for (int x = 0; x < tiles.GetWidth(); x++)
+            {
+                var glyph = tiles.GetTile(x, y) == TileKind.Wall
+                    ? new CoreGlyph('#', GameConstants.ArgbGray, GameConstants.ArgbBlack)
+                    : new CoreGlyph('.', GameConstants.ArgbDarkGray, GameConstants.ArgbBlack);
+                cells.Add(new RenderCell(x, y, glyph));
+            }
+        }
+
         _world.Query(in _renderableEntities, (ref Position pos, ref RenderGlyph glyph) =>
         {
             cells.Add(new RenderCell(pos.Value.X, pos.Value.Y, glyph.Value));
@@ -343,6 +357,11 @@ public class GameSession : IDisposable
     public Point GetMapCenter()
     {
         return _spatial.GetCenter();
+    }
+
+    public TileMap GetTileMap()
+    {
+        return _spatial.GetTileMap();
     }
 
     public bool IsBlocked(Point position)

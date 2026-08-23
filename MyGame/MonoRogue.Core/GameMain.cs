@@ -35,10 +35,9 @@ public enum InputType
 }
 
 /// <summary>
-/// Owns the active game session (the <see cref="GameSession"/>) and exposes the gameplay and
-/// persistence commands that the UI forwards to it. The SadConsole layer only renders
-/// <see cref="GetCurrentSession"/> and sends <see cref="InputCommand"/>s here, keeping game logic
-/// independent of the presentation stack.
+/// Owns the active game session (the <see cref="GameSession"/>) and exposes the gameplay and persistence commands
+///  that the UI forwards to it. The SadConsole layer only renders <see cref="GetCurrentSession"/> and sends
+///  <see cref="InputCommand"/>s here, keeping game logic independent of the presentation stack.
 /// </summary>
 public class GameMain
 {
@@ -51,7 +50,7 @@ public class GameMain
     // The active map, or null until a game is started or loaded.
     public GameSession? GetCurrentSession() => _session;
 
-    // True once a map has been created (a game is in progress).
+    // Returns true once a map has been created (a game is in progress).
     public bool HasActiveGame()
     {
         return _session != null;
