@@ -8,7 +8,7 @@ namespace MonoRogue.UI;
 /// </summary>
 public static class ColorConverter
 {
-    /// <summary>Builds a <see cref="Color"/> from a 0xAARRGGBB packed value.</summary>
+    //Builds a <see cref="Color"/> from a 0xAARRGGBB packed value.
     public static Color FromArgb(int argb) =>
         new Color(
             (byte)((argb >> 16) & 0xFF), // R
@@ -16,7 +16,7 @@ public static class ColorConverter
             (byte)(argb & 0xFF),         // B
             (byte)((argb >> 24) & 0xFF)); // A
 
-    /// <summary>Packs a <see cref="Color"/> into a 0xAARRGGBB value.</summary>
+    // Packs a <see cref="Color"/> into a 0xAARRGGBB value.
     public static int ToArgb(Color color) =>
         (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
 }

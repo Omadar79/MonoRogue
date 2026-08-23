@@ -1,10 +1,9 @@
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Tracks the player's experience earned during the current run and derives a
-/// character level from an adjustable cumulative-XP threshold chart. Applying
-/// level-up effects is deferred to a later milestone; this class only accumulates
-/// XP and reports the resulting level.
+/// Tracks the player's experience earned during the current run and derives a character level from an adjustable 
+/// cumulative-XP threshold chart. Applying level-up effects is deferred to a later milestone; this class only 
+/// accumulates XP and reports the resulting level.
 /// </summary>
 public sealed class PlayerExperience
 {
@@ -17,13 +16,13 @@ public sealed class PlayerExperience
 
     private int _current;
 
-    /// <summary>Total experience accumulated this run.</summary>
+    // Total experience accumulated this run.
     public int GetCurrent() => _current;
 
-    /// <summary>Character level derived from <see cref="GetCurrent"/>.</summary>
+    // Character level derived from <see cref="GetCurrent"/>.
     public int GetLevel() => CalculateLevel(_current);
 
-    /// <summary>Adds experience. Returns the amount actually added.</summary>
+    // Adds experience. Returns the amount actually added.
     public int Award(int amount)
     {
         if (amount <= 0)
@@ -35,10 +34,10 @@ public sealed class PlayerExperience
         return amount;
     }
 
-    /// <summary>Sets the accumulated experience directly (used when restoring a save).</summary>
+    // Sets the accumulated experience directly (used when restoring a save).
     public void SetExperience(int amount) => _current = Math.Max(0, amount);
 
-    /// <summary>Level for an arbitrary XP total.</summary>
+    // Level for an arbitrary XP total.
     public int CalculateLevel(int xp)
     {
         var level = 1;
@@ -57,7 +56,7 @@ public sealed class PlayerExperience
         return level;
     }
 
-    /// <summary>XP required to reach the next level, or 0 when at the highest level.</summary>
+    // XP required to reach the next level, or 0 when at the highest level.
     public int XpForNextLevel()
     {
         var level = GetLevel();

@@ -3,10 +3,9 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Procedural layout generator that carves non-overlapping rectangular rooms and connects
-/// them with L-shaped corridors. The whole map is a solid wall to start, then rooms are
-/// hollowed out and joined so every room is reachable. Fully deterministic for a given
-/// seed. This is the first "real" implementation behind <see cref="IDungeonLayoutGenerator"/>.
+/// Procedural layout generator that carves non-overlapping rectangular rooms and connects them with L-shaped corridors.
+/// The whole map is a solid wall to start, then rooms are hollowed out and joined so every room is reachable.
+/// Fully deterministic for a given seed. This is the first "real" implementation behind <see cref="IDungeonLayoutGenerator"/>.
 /// </summary>
 public sealed class RoomsAndCorridorsLayoutGenerator : IDungeonLayoutGenerator
 {
@@ -134,10 +133,8 @@ public sealed class RoomsAndCorridorsLayoutGenerator : IDungeonLayoutGenerator
     {
         public Point Center => new(X + Width / 2, Y + Height / 2);
 
-        /// <summary>
-        /// True if this room overlaps (or touches) the other room. Padding by one cell
-        /// ensures a wall separates adjacent rooms.
-        /// </summary>
+
+        //True if this room overlaps (or touches) the other room. Padding by one cell ensures a wall separates adjacent rooms.
         public bool Intersects(Room other) =>
             X - 1 < other.X + other.Width &&
             X + Width + 1 > other.X &&

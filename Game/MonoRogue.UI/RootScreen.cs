@@ -27,7 +27,7 @@ public class RootScreen : ScreenObject
     private ScreenSurface _inventoryOverlay;
     private int _inventorySelectedIndex = 0;
     private int _menuSelectedIndex = 0;
-    private readonly string[] _menuOptions = ["New Game", "Save Map", "Load Map", "Exit Game"];
+    private string[] _menuOptions = [];
     private readonly List<string> _messages = [];
 
 
@@ -91,6 +91,7 @@ public class RootScreen : ScreenObject
         _menuOverlay = new ScreenSurface(totalWidth, totalHeight);
         _menuOverlay.UseMouse = false;
         _menuOverlay.UseKeyboard = false; // RootScreen handles keyboard centrally
+        RefreshMenuOptions();
         DrawMainMenu();
         _menuOverlay.IsVisible = (_game.GetCurrentState() == GameState.MainMenu);
         Children.Add(_menuOverlay);
@@ -129,6 +130,7 @@ public class RootScreen : ScreenObject
                     break;
 
                 case InputType.MenuSelect:
+                {
                     var choice = _menuOptions[_menuSelectedIndex];
                     if (choice == "New Game")
                     {
@@ -137,48 +139,19 @@ public class RootScreen : ScreenObject
                         DrawMap();
                         DrawRightPanel();
                     }
-                    else if (choice == "Save Map")
+                    else if (choice == "Continue")
                     {
-                        try
+                        if (_game.ContinueGame(_mapWidth, _mapHeight))
                         {
-                            if (_game.SaveMap("saved_map.json"))
-                            {
-                                AppendMessage($"Saved map. Active effects: {_game.GetCurrentSession()!.GetActiveEffectCount()}");
-                            }
-                            else
-                            {
-                                AppendMessage("No active game to save.");
-                            }
+                            FadeOut(_menuOverlay);
+                            DrawMap();
+                            DrawRightPanel();
+                            AppendMessage($"Continued. Active effects: {_game.GetCurrentSession()!.GetActiveEffectCount()}");
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            Console.WriteLine($"Failed to save map: {ex.Message}");
-                            AppendMessage("Failed to save map.");
+                            AppendMessage("No valid save found.");
                         }
-                        handled = true;
-                    }
-                    else if (choice == "Load Map")
-                    {
-                        try
-                        {
-                            if (_game.LoadMap("saved_map.json", _mapWidth, _mapHeight))
-                            {
-                                FadeOut(_menuOverlay);
-                                DrawMap();
-                                DrawRightPanel();
-                                AppendMessage($"Loaded map. Restored active effects: {_game.GetCurrentSession()!.GetActiveEffectCount()}");
-                            }
-                            else
-                            {
-                                AppendMessage("No saved map found.");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Failed to load map: {ex.Message}");
-                            AppendMessage("Failed to load map.");
-                        }
-                        handled = true;
                     }
                     else if (choice == "Exit Game")
                     {
@@ -186,6 +159,7 @@ public class RootScreen : ScreenObject
                     }
                     handled = true;
                     break;
+                }
 
                 case InputType.MenuExit:
                     Game.Instance.MonoGameInstance.Exit();
@@ -213,6 +187,11 @@ public class RootScreen : ScreenObject
                     {
                         FadeOut(_pauseOverlay);
                     }
+                    handled = true;
+                    break;
+
+                case InputType.Quit:
+                    Game.Instance.MonoGameInstance.Exit();
                     handled = true;
                     break;
 
@@ -421,7 +400,7 @@ public class RootScreen : ScreenObject
     {
         ClearSurface(_pauseOverlay);
 
-        const string msg = "PAUSED - Press Escape to resume";
+        const string msg = "PAUSED - Esc: resume   Q: quit";
         var surface = _pauseOverlay.Surface;
         _pauseOverlay.Print(Math.Max(0, (surface.Width - msg.Length) / 2), Math.Max(0, surface.Height / 2),
             msg, Color.Yellow, Color.DarkBlue);
@@ -445,6 +424,7 @@ public class RootScreen : ScreenObject
         _inventoryOverlay.IsVisible = false;
         _messages.Clear();
         DrawMessageConsole();
+        RefreshMenuOptions();
         DrawMainMenu();
         _menuOverlay.IsVisible = true;
         FadeIn(_menuOverlay,0);
@@ -750,11 +730,23 @@ public class RootScreen : ScreenObject
         _inventoryOverlay.IsDirty = true;
     }
 
+    // Rebuilds the main-menu options based on whether a continue-able auto-save exists.
+    private void RefreshMenuOptions()
+    {
+        _menuOptions = _game.HasSaveFile()
+            ? ["Continue", "New Game", "Exit Game"]
+            : ["New Game", "Exit Game"];
+
+        if (_menuSelectedIndex >= _menuOptions.Length)
+        {
+            _menuSelectedIndex = 0;
+        }
+    }
+
     private void DrawMainMenu()
     {
         var surface = _menuOverlay.Surface;
         ClearSurface(_menuOverlay);
-
         const string title = "MonoRogue";
         int titleX = Math.Max(0, (surface.Width - title.Length) / 2);
         int titleY = Math.Max(0, surface.Height / 3);

@@ -4,14 +4,12 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Populates the world with entities: the player, monsters, items, and treasure.
-/// Reads content definitions from the <see cref="MonoRogue.Data"/> loaders and
-/// delegates entity construction to <see cref="EntityFactory"/>. Placement picks
-/// walkable floor cells via <see cref="SpatialMap.GetRandomWalkableCell(Random)"/>
-/// (items) and <see cref="SpatialMap.GetRandomOpenCell(Random)"/> (blocking entities),
-/// so nothing ever spawns inside a wall. The static terrain layout is produced separately
-/// by an <see cref="IDungeonLayoutGenerator"/> before this class runs; the <see cref="Random"/>
-/// instance is injected so placement is reproducible when a fixed seed is supplied.
+/// Populates the world with entities: the player, monsters, items, and treasure. Reads content definitions from the 
+/// <see cref="MonoRogue.Data"/> loaders and delegates entity construction to <see cref="EntityFactory"/>. Placement 
+/// picks walkable floor cells via <see cref="SpatialMap.GetRandomWalkableCell(Random)"/> (items) and 
+/// <see cref="SpatialMap.GetRandomOpenCell(Random)"/> (blocking entities), so nothing ever spawns inside a wall. 
+/// The static terrain layout is produced separatelyby an <see cref="IDungeonLayoutGenerator"/> before this class runs;
+/// the <see cref="Random"/> instance is injected so placement is reproducible when a fixed seed is supplied.
 /// </summary>
 public sealed class MapGenerator
 {
@@ -54,9 +52,9 @@ public sealed class MapGenerator
     public void CreateInitialPlayer()
     {
         var center = _spatial.GetCenter();
-        // The player is placed first, before any other entities exist, so a walkable center
-        // is the deterministic default. Fall back to a random open cell if a future layout
-        // generator ever carves a wall at the center.
+        
+        // The player is placed first, before any other entities exist, so a walkable center is the deterministic default.
+        // Fall back to a random open cell if a future layout generator ever carves a wall at the center.
         var spawn = _spatial.CanOccupy(center)
             ? center
             : (_spatial.GetRandomOpenCell(_rng) ?? center);

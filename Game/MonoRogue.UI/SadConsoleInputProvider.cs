@@ -89,6 +89,12 @@ public class SadConsoleInputProvider : IInputProvider
             results.Add(new InputCommand(InputType.TogglePause, new SadRogue.Primitives.Point(0, 0)));
         }
 
+        // While paused, Q quits the game.
+        if (_game.GetCurrentState() == GameState.Paused && _keyboard.IsKeyPressed(Keys.Q))
+        {
+            results.Add(new InputCommand(InputType.Quit, new SadRogue.Primitives.Point(0, 0)));
+        }
+
         // Movement only when gameplay input is allowed.
         if (_game.AllowsGameplayInput())
         {

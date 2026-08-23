@@ -25,11 +25,9 @@ public sealed class PathfindingService
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
     }
 
-    /// <summary>
-    /// Returns the first step along the shortest path from <paramref name="from"/> to
-    /// <paramref name="to"/>, or <c>null</c> if no path exists. The step is always a
-    /// cardinal (four-directional) neighbor of <paramref name="from"/>.
-    /// </summary>
+
+    // Returns the first step along the shortest path from <paramref name="from"/> to <paramref name="to"/>, or 
+    // <c>null</c> if no path exists. The step is always a cardinal (four-directional) neighbor of <paramref name="from"/>.
     public Point? GetNextStep(Point from, Point to)
     {
         var map = BuildMap(from, to);

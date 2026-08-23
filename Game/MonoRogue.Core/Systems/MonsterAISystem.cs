@@ -5,8 +5,7 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core.Systems;
 
 /// <summary>
-/// Monster turn logic: plans and executes each monster's actions, finds monsters by
-/// position, and removes dead monsters.
+/// Monster turn logic: plans and executes each monster's actions, finds monsters by position, and removes dead monsters.
 /// </summary>
 public sealed class MonsterAISystem
 {

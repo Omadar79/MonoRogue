@@ -4,8 +4,7 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core.Systems;
 
 /// <summary>
-/// Health and damage logic: applying damage (with protection), healing, death checks,
-/// and reading attack/health values.
+/// Health and damage logic: applying damage (with protection), healing, death checks,and reading attack/health values.
 /// </summary>
 public sealed class CombatSystem
 {

@@ -244,7 +244,7 @@ public sealed class MapSerializer
     }
 
     // Rebuild the static terrain from the save. Legacy saves (version < 5) have no Tiles
-    // field, so we leave the freshly-generated layout untouched to preserve compatibility.
+    // field, so we leave the freshly generated layout untouched to preserve compatibility.
     private void RestoreTiles(MapData mapData)
     {
         if (mapData.Tiles == null)

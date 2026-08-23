@@ -56,11 +56,9 @@ public sealed class SpatialMap
 
     public bool CanOccupy(Point position) => IsValidCell(position) && !IsBlocked(position);
 
-    /// <summary>
-    /// Returns true when a straight (Bresenham) line from <paramref name="from"/> to
-    /// <paramref name="to"/> crosses no walls. Used to decide whether a monster can see
-    /// the player. Endpoints are expected to be floor cells (actors never stand in walls).
-    /// </summary>
+
+    // Returns true when a straight (Bresenham) line from Actor to actor  crosses no walls. Used to decide whether
+    //  a monster can see the player. Endpoints are expected to be floor cells (actors never stand in walls).
     public bool HasLineOfSight(Point from, Point to)
     {
         int x0 = from.X, y0 = from.Y;
@@ -89,21 +87,16 @@ public sealed class SpatialMap
         }
     }
 
-    /// <summary>
-    /// Returns a uniformly random walkable floor cell, or <c>null</c> if the map has no
-    /// floor tiles. Guarantees the result is never a wall; used to place non-blocking
-    /// entities such as items.
-    /// </summary>
+
+    // Returns a uniformly random walkable floor cell, or <c>null</c> if the map has no floor tiles.
+    // Guarantees the result is never a wall; used to place non-blocking entities such as items.
     public Point? GetRandomWalkableCell(Random rng)
     {
         return PickRandomCell(rng, _tiles.IsWalkable);
     }
 
-    /// <summary>
-    /// Returns a uniformly random cell that is both walkable and not currently blocked by
-    /// an entity, or <c>null</c> if none exists. Used to place blocking entities (player,
-    /// monsters, obstacles) without overlapping each other.
-    /// </summary>
+    // Returns a uniformly random cell that is both walkable and not currently blocked by an entity, or <c>null</c>
+    //  if none exists. Used to place blocking entities (player, monsters, obstacles) without overlapping each other.
     public Point? GetRandomOpenCell(Random rng)
     {
         return PickRandomCell(rng, CanOccupy);

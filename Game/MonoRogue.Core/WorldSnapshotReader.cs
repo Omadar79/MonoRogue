@@ -5,8 +5,8 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// A point-in-time read of every entity in the world, captured once so the
-/// serializer can map it to DTOs without holding a <see cref="World"/> reference.
+/// A point-in-time read of every entity in the world, captured once so the serializer can map it to DTOs
+/// without holding a <see cref="World"/> reference.
 /// </summary>
 public sealed record WorldSnapshot(
     List<SnapshotRenderable> Renderables,
@@ -25,10 +25,9 @@ public readonly record struct SnapshotItem(ItemKind Kind, string Name, int Magni
 
 public readonly record struct SnapshotEffect(Entity Target, EffectKind Kind, TimedEffect Timed, int Magnitude);
 
-/// <summary>
-/// Owns all the read queries needed to snapshot the world for persistence. This keeps
-/// raw query descriptions in one place so <see cref="MapSerializer"/> composes a
-/// <see cref="WorldSnapshot"/> instead of reaching into the world itself.
+///<summary>
+/// Owns all the read queries needed to snapshot the world for persistence. This keeps raw query descriptions in one
+/// place so <see cref="MapSerializer"/> composes a <see cref="WorldSnapshot"/> instead of reaching into the world itself.
 /// </summary>
 public sealed class WorldSnapshotReader
 {

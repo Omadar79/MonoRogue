@@ -3,9 +3,8 @@ using Arch.Core;
 namespace MonoRogue.Core.Systems;
 
 /// <summary>
-/// Owns timed effects: creation, ticking, expiry, and protection lookups.
-/// Poison damage is applied via an injected <c>Func&lt;Entity,int,int&gt;</c> so this
-/// system does not depend on <see cref="CombatSystem"/> (avoiding a dependency cycle).
+/// Owns timed effects: creation, ticking, expiry, and protection lookups. Poison damage is applied via an injected
+/// <c>Func&lt;Entity,int,int&gt;</c> so this system does not depend on <see cref="CombatSystem"/> (avoiding a dependency cycle).
 /// </summary>
 public sealed class EffectSystem
 {

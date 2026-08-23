@@ -5,10 +5,9 @@ using Point = SadRogue.Primitives.Point;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Field-of-view and exploration memory, backed by RogueSharp's line-of-sight algorithm.
-/// Terrain is synced from the static <see cref="TileMap"/> (walls block sight and movement;
-/// floors are transparent). The set of currently visible cells comes from
-/// <see cref="Map.ComputeFov"/> each frame, while exploration memory (cells ever seen) is
+/// Field-of-view and exploration memory, backed by RogueSharp's line-of-sight algorithm. Terrain is synced from the
+/// static <see cref="TileMap"/> (walls block sight and movement; floors are transparent). The set of currently visible
+/// cells comes from <see cref="Map.ComputeFov"/> each frame, while exploration memory (cells ever seen) is
 /// accumulated here so previously seen areas stay "remembered" after they leave sight.
 /// </summary>
 public sealed class VisibilityMap
@@ -23,7 +22,7 @@ public sealed class VisibilityMap
         Sync(tiles);
     }
 
-    /// <summary>Rebuilds the RogueSharp map from the current terrain grid, clearing memory.</summary>
+    //Rebuilds the RogueSharp map from the current terrain grid, clearing memory.
     public void Sync(TileMap tiles)
     {
         _map.Initialize(tiles.GetWidth(), tiles.GetHeight());
@@ -40,7 +39,7 @@ public sealed class VisibilityMap
         _explored.Clear();
     }
 
-    /// <summary>Recomputes field of view from the given origin cell, lighting walls.</summary>
+    //Recomputes field of view from the given origin cell, lighting walls.
     public void Compute(Point origin, int radius)
     {
         var visible = new HashSet<(int X, int Y)>();

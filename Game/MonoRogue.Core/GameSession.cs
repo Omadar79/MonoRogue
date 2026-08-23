@@ -6,10 +6,9 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Thin orchestrator for a single map/dungeon run. Owns the Arch <see cref="World"/>,
-/// composes the focused systems, and exposes the public gameplay/persistence API.
-/// Entity spawning, serialization, and inventory bookkeeping are delegated to
-/// <see cref="MapGenerator"/>, <see cref="MapSerializer"/>, and <see cref="Inventory"/>.
+/// Thin orchestrator for a single map/dungeon run. Owns the Arch <see cref="World"/>, composes the focused systems,
+/// and exposes the public gameplay/persistence API. Entity spawning, serialization, and inventory bookkeeping are
+/// delegated to <see cref="MapGenerator"/>, <see cref="MapSerializer"/>, and <see cref="Inventory"/>.
 /// </summary>
 public class GameSession : IDisposable
 {
@@ -41,7 +40,7 @@ public class GameSession : IDisposable
     public int GetHeight() => _mapHeight;
     public IReadOnlyList<ItemStack> GetInventory() => _inventory.GetStacks();
 
-    /// <summary>Total experience accumulated this run.</summary>
+    //Total experience accumulated this run.
     public int GetExperience() => _experience.GetCurrent();
 
     public GameSession(int mapWidth, int mapHeight, int? seed = null, IDungeonLayoutGenerator? layoutGenerator = null)
@@ -103,10 +102,9 @@ public class GameSession : IDisposable
         }
     }
 
-    // Snapshot of the map for the UI to draw: static terrain (walls/floors) first, then
-    // entities on top so actors/items are drawn over their tile. Terrain is always emitted
-    // (tagged Hidden/Explored/Visible so the UI can hide or dim it); entities are only
-    // emitted while in the player's field of view.
+    // Snapshot of the map for the UI to draw: static terrain (walls/floors) first, then entities on top so actors/items
+    // are drawn over their tile. Terrain is always emitted (tagged Hidden/Explored/Visible so the UI can hide or
+    // dim it); entities are only emitted while in the player's field of view.
     public IReadOnlyList<RenderCell> GetRenderSnapshot()
     {
         var cells = new List<RenderCell>();

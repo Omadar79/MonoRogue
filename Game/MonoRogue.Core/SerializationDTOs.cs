@@ -1,9 +1,9 @@
-/// <summary>
-/// Simple, UI-agnostic DTOs (Data Transfer Objects) for map / entity / player persistence and transfer.
-/// These live in MonoRogue.Core so core systems can operate with plain data without depending on SadConsole types.
-/// </summary>
-
 using MonoRogue.Data;
+
+
+// Simple, UI-agnostic DTOs (Data Transfer Objects) for map / entity / player persistence and transfer.
+// These live in MonoRogue.Core so core systems can operate with plain data without depending on SadConsole types.
+
 
 namespace MonoRogue.Core;
 // 

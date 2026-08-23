@@ -3,9 +3,8 @@ using MonoRogue.Data;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Player inventory: an ordered list of item stacks with stacking, gold totals,
-/// and potion-consumption bookkeeping. Pure data — no ECS or UI dependencies,
-/// so it can be unit tested in isolation.
+/// Player inventory: an ordered list of item stacks with stacking, gold totals, and potion-consumption bookkeeping.
+/// Pure data — no ECS or UI dependencies, so it can be unit tested in isolation.
 /// </summary>
 public sealed class Inventory
 {
@@ -15,11 +14,9 @@ public sealed class Inventory
 
     public void Clear() => _stacks.Clear();
 
-    /// <summary>
-    /// Adds one item, merging into an existing stack only when kind, name, and magnitude
-    /// all match. Items with differing magnitudes (e.g. gold of different values) are kept
-    /// in separate stacks so <see cref="GetGold"/> stays correct.
-    /// </summary>
+
+    // Adds one item, merging into an existing stack only when kind, name, and magnitude all match. Items with differing
+    // magnitudes (e.g., gold of different values) are kept in separate stacks so <see cref="GetGold"/> stays correct.
     public void Add(ItemKind kind, string name, int magnitude)
     {
         magnitude = Math.Max(1, magnitude);
@@ -37,13 +34,13 @@ public sealed class Inventory
         _stacks.Add(new ItemStack(kind, name, 1, magnitude));
     }
 
-    /// <summary>Appends a fully-formed stack (used when restoring a saved inventory).</summary>
+    //>Appends a fully-formed stack (used when restoring a saved inventory).
     public void AddStack(ItemStack stack) => _stacks.Add(stack);
 
     public int GetGold() =>
         _stacks.Where(s => s.Kind == ItemKind.Gold).Sum(s => s.Count * s.Magnitude);
 
-    /// <summary>Index of the first potion stack that can be consumed, or -1.</summary>
+    //Index of the first potion stack that can be consumed, or -1.
     public int FindPotionIndex()
     {
         for (var i = 0; i < _stacks.Count; i++)
@@ -59,7 +56,7 @@ public sealed class Inventory
 
     public ItemStack GetStack(int index) => _stacks[index];
 
-    /// <summary>Decrements the stack at <paramref name="index"/> by one, removing it when empty.</summary>
+    // Decrements the stack at <paramref name="index"/> by one, removing it when empty.
     public void ConsumeOne(int index)
     {
         var stack = _stacks[index];

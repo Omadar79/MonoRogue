@@ -26,7 +26,7 @@ Packages referenced by `Game.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopG
 ### Directory layout
 - `Game\Program.cs` � app entry point and SadConsole host setup (no `--test-content` flag anymore).
 - `Game\MonoRogue.Core\` � core gameplay, map generation, ECS components and systems.
-  - `GameMain.cs` � top-level game state machine (`GameState`, `InputType`); intentionally decoupled from SadConsole.
+  - `GameMain.cs` � top-level game state machine (`GameState`, `InputType`); intentionally decoupled from SadConsole. Owns the auto-save slot and continue/new-game flow.
   - `GameConstants.cs` � shared tuning constants.
   - `Components.cs` � ECS component definitions and small records (e.g. `RenderCell`, `MonsterBehavior`, `MonsterMemory`).
   - `GameSession.cs` � the thin orchestrator that owns the `World`, composes all systems, and handles map generation, turn ordering, inventory, and persistence.
@@ -62,6 +62,7 @@ Packages referenced by `Game.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopG
   - `EffectSystem` accepts a `Func<Entity,int,int>` (`applyDamage`) callback for poison ticks so it does not form a cycle with `CombatSystem`.
 - Monster AI is data-driven and vision-gated: `MonsterBehavior` (`Type`, `Range`, `SpecialEnergyCost`) drives `MonsterAISystem`, and a per-monster `MonsterMemory` (`HasSeenPlayer`, `LastSeenPosition`) gates chasing. Monsters path toward the player while visible (`SpatialMap.HasLineOfSight`), otherwise toward the last-seen position; unseen-and-never-seen monsters wait. `InferBehavior(char)` remains only as a fallback for legacy saves / no-content scenarios. Monster memory is transient and resets on load (not persisted).
 - Rendering is decoupled from persistence: `RootScreen.DrawMap()` uses `GameSession.GetRenderSnapshot()` (returns `RenderCell` records), not `SaveMap()`.
+- Persistence is an auto-save system: `GameMain` writes to a single slot (`GameMain.GetDefaultSaveFilePath()`, resolved to the OS application-data dir via `MapPersistenceHelpers.GetDefaultSavePath()`) after every completed player turn, deletes the file on `GameOver`/`StartNewGame`, and exposes `HasSaveFile()`/`ContinueGame()` for a main-menu "Continue" option. There is no manual save.
 - Save format is versioned (`MapData.Version`). The current version is 5. Newer DTO fields are optional/nullable so legacy saves remain loadable. Persisted entity data includes position, glyph, inventory, behavior, health/max health, and attack.
 - Keep content-loading code in `MonoRogue.Data`; do not move JSON-driven content definitions into the gameplay layer. Keep UI ownership in `MonoRogue.UI`.
 

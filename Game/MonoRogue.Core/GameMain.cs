@@ -31,7 +31,8 @@ public enum InputType
     MenuDown,
     MenuSelect,
     MenuExit,
-    Confirm
+    Confirm,
+    Quit
 }
 
 /// <summary>
@@ -43,6 +44,12 @@ public class GameMain
 {
     private GameSession? _session;
     private GameState _currentState = GameState.MainMenu;
+    private readonly string _saveFilePath;
+
+    public GameMain(string? saveFilePath = null)
+    {
+        _saveFilePath = saveFilePath ?? MapPersistenceHelpers.GetDefaultSavePath();
+    }
 
     // The current state of the game. Starts in the main menu.
     public GameState GetCurrentState() => _currentState;
@@ -58,16 +65,19 @@ public class GameMain
 
     // Starts a brand-new game with a procedurally generated rooms-and-corridors map. An
     // optional seed makes generation reproducible; when omitted, a non-deterministic seed
-    // is used.
+    // is used. Any existing auto-save is cleared so a new run never resumes stale progress.
     public void StartNewGame(int mapWidth, int mapHeight, int? seed = null)
     {
         _session?.Dispose();
         _session = new GameSession(mapWidth, mapHeight, seed, new RoomsAndCorridorsLayoutGenerator());
+        DeleteSave();
         _currentState = GameState.Playing;
     }
 
+    // The player died: discard the auto-save and enter the game-over state.
     public void GameOver()
     {
+        DeleteSave();
         _currentState = GameState.GameOver;
     }
 
@@ -121,13 +131,23 @@ public class GameMain
     // Processes a player turn with the given movement delta. Returns the result of the turn or null if no game is active.
     public TurnResult? ProcessPlayerTurn(Point playerDelta)
     {
-        return _session?.ProcessPlayerTurn(playerDelta);
+        var result = _session?.ProcessPlayerTurn(playerDelta);
+        if (result is TurnResult turn && !turn.PlayerDied)
+        {
+            AutoSave();
+        }
+        return result;
     }
 
     // Processes the use of a potion. Returns the result of the turn or null if no game is active.
     public TurnResult? ProcessUsePotion()
     {
-        return _session?.ProcessUsePotion();
+        var result = _session?.ProcessUsePotion();
+        if (result is TurnResult turn && !turn.PlayerDied)
+        {
+            AutoSave();
+        }
+        return result;
     }
 
     // ---- Inventory modal ----
@@ -153,30 +173,33 @@ public class GameMain
     // Uses the item at the given inventory index as a full turn. Returns null when no game is active.
     public TurnResult? UseItemAt(int index)
     {
-        return _session?.ProcessUseItemAt(index);
+        var result = _session?.ProcessUseItemAt(index);
+        if (result is TurnResult turn && !turn.PlayerDied)
+        {
+            AutoSave();
+        }
+        return result;
     }
 
     // ---- Persistence ----
 
-    // Saves the active game. Returns false when there is no active game.
-    public bool SaveMap(string path)
+    // Single auto-save slot. Every completed player turn overwrites this file; it is
+    // deleted when the player dies (or starts a new game), and recreated on the next turn.
+    // The path lives in the OS application-data directory so it works on Windows, Linux,
+    // and macOS alike.
+    public static string GetDefaultSaveFilePath() => MapPersistenceHelpers.GetDefaultSavePath();
+
+    // Returns true when a continue-able auto-save exists on disk.
+    public bool HasSaveFile() => MapPersistenceHelpers.SaveFileExists(_saveFilePath);
+
+    // "Continue": loads the auto-save into a fresh session and transitions to playing.
+    // Returns false when no valid save exists.
+    public bool ContinueGame(int mapWidth, int mapHeight)
     {
-        if (_session == null)
-        {
-            return false;
-        }
+        _session?.Dispose();
+        _session = new GameSession(mapWidth, mapHeight);
 
-        MapPersistenceHelpers.SaveToFile(_session, path);
-        return true;
-    }
-
-    // "Continue": loads a game from disk, creating a fresh map first if one does not exist yet, then transitions to
-    // GameState.Playing. Returns false when no save exists or loading fails.
-    public bool LoadMap(string path, int mapWidth, int mapHeight)
-    {
-        _session ??= new GameSession(mapWidth, mapHeight);
-
-        if (!MapPersistenceHelpers.LoadIntoWorld(_session, path))
+        if (!MapPersistenceHelpers.LoadIntoWorld(_session, _saveFilePath))
         {
             return false;
         }
@@ -184,6 +207,20 @@ public class GameMain
         _currentState = GameState.Playing;
         return true;
     }
+
+    // Writes the current session to the auto-save slot. No-op without an active game.
+    private void AutoSave()
+    {
+        if (_session == null)
+        {
+            return;
+        }
+
+        MapPersistenceHelpers.SaveToFile(_session, _saveFilePath);
+    }
+
+    // Removes the auto-save file (used on death and when starting a new game).
+    private void DeleteSave() => MapPersistenceHelpers.DeleteSave(_saveFilePath);
 
 
     // Process input provided by an IInputProvider (UI adapter) and return the commands that are valid for the current state.
@@ -213,6 +250,14 @@ public class GameMain
                 // Toggle pause only valid when playing or paused
                 case InputType.TogglePause:
                     if (_currentState == GameState.Playing || _currentState == GameState.Paused)
+                    {
+                        results.Add(cmd);
+                    }
+                    break;
+
+                // Quit (exit the game) only valid from the pause menu
+                case InputType.Quit:
+                    if (_currentState == GameState.Paused)
                     {
                         results.Add(cmd);
                     }

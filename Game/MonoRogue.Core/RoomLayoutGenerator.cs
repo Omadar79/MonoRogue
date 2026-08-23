@@ -1,9 +1,8 @@
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Trivial layout generator: a single open room surrounded by border walls. This mirrors
-/// the original hand-carved layout and is the baseline implementation behind the
-/// <see cref="IDungeonLayoutGenerator"/> seam.
+/// Trivial layout generator: a single open room surrounded by border walls. This mirrors the original hand-carved 
+/// layout and is the baseline implementation behind the <see cref="IDungeonLayoutGenerator"/> seam.
 /// </summary>
 public sealed class RoomLayoutGenerator : IDungeonLayoutGenerator
 {

@@ -34,7 +34,7 @@ public sealed class TileMap
     public void SetTile(int x, int y, TileKind kind) => _tiles[x, y] = kind;
     public void SetTile(Point position, TileKind kind) => _tiles[position.X, position.Y] = kind;
 
-    /// <summary>Sets every cell in the grid to the given kind.</summary>
+    // Sets every cell in the grid to the given kind.
     public void Fill(TileKind kind)
     {
         for (int y = 0; y < GetHeight(); y++)
