@@ -71,6 +71,7 @@ public sealed class EntityFactory
                     Kind = ActorKind.Monster
                 },
             behavior,
+            new MonsterMemory(),
             new Experience
                 {
                     Value = Math.Max(0, experience)

@@ -500,9 +500,31 @@ public class RootScreen : ScreenObject
                     continue;
                 }
 
+                if (cell.Visibility == CellVisibility.Hidden)
+                {
+                    surface[screenX, screenY].Glyph = ' ';
+                    surface[screenX, screenY].Foreground = Color.Black;
+                    surface[screenX, screenY].Background = Color.Black;
+                    continue;
+                }
+
+                var foreground = ColorConverter.FromArgb(cell.Glyph.ForegroundArgb);
+                var background = ColorConverter.FromArgb(cell.Glyph.BackgroundArgb);
+
+                // Dim remembered (explored but not currently visible) cells to half brightness.
+                if (cell.Visibility == CellVisibility.Explored)
+                {
+                    foreground = new Color(
+                        (byte)(foreground.R / 2),
+                        (byte)(foreground.G / 2),
+                        (byte)(foreground.B / 2),
+                        foreground.A);
+                    background = Color.Black;
+                }
+
                 surface[screenX, screenY].Glyph = cell.Glyph.Glyph;
-                surface[screenX, screenY].Foreground = ColorConverter.FromArgb(cell.Glyph.ForegroundArgb);
-                surface[screenX, screenY].Background = ColorConverter.FromArgb(cell.Glyph.BackgroundArgb);
+                surface[screenX, screenY].Foreground = foreground;
+                surface[screenX, screenY].Background = background;
             }
         }
 

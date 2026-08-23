@@ -57,6 +57,39 @@ public sealed class SpatialMap
     public bool CanOccupy(Point position) => IsValidCell(position) && !IsBlocked(position);
 
     /// <summary>
+    /// Returns true when a straight (Bresenham) line from <paramref name="from"/> to
+    /// <paramref name="to"/> crosses no walls. Used to decide whether a monster can see
+    /// the player. Endpoints are expected to be floor cells (actors never stand in walls).
+    /// </summary>
+    public bool HasLineOfSight(Point from, Point to)
+    {
+        int x0 = from.X, y0 = from.Y;
+        int x1 = to.X, y1 = to.Y;
+        int dx = Math.Abs(x1 - x0);
+        int dy = -Math.Abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+
+        while (true)
+        {
+            if (!_tiles.IsWalkable(x0, y0))
+            {
+                return false;
+            }
+
+            if (x0 == x1 && y0 == y1)
+            {
+                return true;
+            }
+
+            var e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+
+    /// <summary>
     /// Returns a uniformly random walkable floor cell, or <c>null</c> if the map has no
     /// floor tiles. Guarantees the result is never a wall; used to place non-blocking
     /// entities such as items.

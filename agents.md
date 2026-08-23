@@ -21,16 +21,21 @@ The solution is `MonoRogue.slnx` (XML solution format). It contains exactly two 
 - `Game\Game.csproj` � the single executable project (`OutputType=WinExe`, `TargetFramework=net10.0`). It compiles three source folders (not separate assemblies): `MonoRogue.Core`, `MonoRogue.Data`, and `MonoRogue.UI`. `RootNamespace=MonoRogue`.
 - `Tests\MonoRogue.Tests.csproj` � an xUnit test project referencing `Game.csproj`. Run with `dotnet test`.
 
-Packages referenced by `Game.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopGL`, `RogueSharp`, `SadConsole.Host.MonoGame`, and `SadConsole.Extended`. (Note: `RogueSharp` is referenced but not currently used in source.)
+Packages referenced by `Game.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopGL`, `RogueSharp`, `SadConsole.Host.MonoGame`, and `SadConsole.Extended`. (Note: `RogueSharp` provides field-of-view via `VisibilityMap` and is also available for pathfinding/A*, goal maps, and dice notation.)
 
 ### Directory layout
 - `Game\Program.cs` � app entry point and SadConsole host setup (no `--test-content` flag anymore).
 - `Game\MonoRogue.Core\` � core gameplay, map generation, ECS components and systems.
   - `GameMain.cs` � top-level game state machine (`GameState`, `InputType`); intentionally decoupled from SadConsole.
   - `GameConstants.cs` � shared tuning constants.
-  - `Components.cs` � ECS component definitions and small records (e.g. `RenderCell`, `MonsterBehavior`).
+  - `Components.cs` � ECS component definitions and small records (e.g. `RenderCell`, `MonsterBehavior`, `MonsterMemory`).
   - `GameSession.cs` � the thin orchestrator that owns the `World`, composes all systems, and handles map generation, turn ordering, inventory, and persistence.
-  - `SpatialMap.cs` � spatial index/lookup helper.
+  - `SpatialMap.cs` � spatial index/lookup helper plus Bresenham line-of-sight checks.
+  - `VisibilityMap.cs` � field-of-view + exploration memory (wraps RogueSharp `Map`).
+  - `PathfindingService.cs` � A* next-step lookups (wraps RogueSharp `PathFinder`).
+  - `TileMap.cs` � static terrain grid (`TileKind` Floor/Wall).
+  - `Camera.cs` � viewport math for scrolling.
+  - `IDungeonLayoutGenerator.cs` / `RoomLayoutGenerator.cs` / `RoomsAndCorridorsLayoutGenerator.cs` � terrain layout generators.
   - `SerializationDTOs.cs` � save/load DTOs (`EntityDTO`, `EffectDTO`, `MapData` with a versioned format).
   - `MapPersistenceHelpers.cs` � helpers shared by save/load logic.
   - `InputCommand.cs` / `IInputProvider.cs` � input abstraction.
@@ -55,9 +60,9 @@ Packages referenced by `Game.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopG
   - `MonsterAISystem` depends on `CombatSystem` and `SpatialMap`.
   - `PlayerActionSystem` depends on `SpatialMap`.
   - `EffectSystem` accepts a `Func<Entity,int,int>` (`applyDamage`) callback for poison ticks so it does not form a cycle with `CombatSystem`.
-- Monster AI is data-driven: `MonsterBehavior` component (`Type`, `Range`, `SpecialEnergyCost`) drives `MonsterAISystem`. `InferBehavior(char)` remains only as a fallback for legacy saves / no-content scenarios.
+- Monster AI is data-driven and vision-gated: `MonsterBehavior` (`Type`, `Range`, `SpecialEnergyCost`) drives `MonsterAISystem`, and a per-monster `MonsterMemory` (`HasSeenPlayer`, `LastSeenPosition`) gates chasing. Monsters path toward the player while visible (`SpatialMap.HasLineOfSight`), otherwise toward the last-seen position; unseen-and-never-seen monsters wait. `InferBehavior(char)` remains only as a fallback for legacy saves / no-content scenarios. Monster memory is transient and resets on load (not persisted).
 - Rendering is decoupled from persistence: `RootScreen.DrawMap()` uses `GameSession.GetRenderSnapshot()` (returns `RenderCell` records), not `SaveMap()`.
-- Save format is versioned (`MapData.Version`). The current version is 4. Newer DTO fields are optional/nullable so legacy saves remain loadable. Persisted entity data includes position, glyph, inventory, behavior, health/max health, and attack.
+- Save format is versioned (`MapData.Version`). The current version is 5. Newer DTO fields are optional/nullable so legacy saves remain loadable. Persisted entity data includes position, glyph, inventory, behavior, health/max health, and attack.
 - Keep content-loading code in `MonoRogue.Data`; do not move JSON-driven content definitions into the gameplay layer. Keep UI ownership in `MonoRogue.UI`.
 
 ## Development workflow (agent-friendly)

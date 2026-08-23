@@ -67,6 +67,7 @@ public class ExperienceTests
             new BlocksMovement(),
             new ActorControlled { Kind = ActorKind.Monster },
             new MonsterBehavior { Type = MonoRogue.Data.MonsterAIType.Melee },
+            new MonsterMemory(),
             new Energy { Current = 0, GainPerTurn = 100, ActionCost = 100 },
             new Attack { Damage = 3 },
             new Experience { Value = experience });

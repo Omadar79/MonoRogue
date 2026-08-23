@@ -34,4 +34,7 @@ public static class GameConstants
     // Terrain glyph colors: walls use a lighter gray, floors a darker gray.
     public const int ArgbGray = unchecked((int)0xFF808080);
     public const int ArgbDarkGray = unchecked((int)0xFF404040);
+
+    // How far (in cells) the player can see for field-of-view computation.
+    public const int DefaultFovRadius = 10;
 }

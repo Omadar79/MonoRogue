@@ -33,7 +33,16 @@ public readonly record struct CoreGlyph(char Glyph, int ForegroundArgb, int Back
 
 // A single renderable cell, used to hand glyph data to the UI without exposing
 // save/serialization concerns. Kept UI-agnostic (raw ARGB ints, no SadConsole types).
-public readonly record struct RenderCell(int X, int Y, CoreGlyph Glyph);
+public readonly record struct RenderCell(int X, int Y, CoreGlyph Glyph, CellVisibility Visibility = CellVisibility.Visible);
+
+// How a map cell should be presented: currently in sight, remembered (explored but out of
+// sight), or hidden (never seen). The UI uses this to brighten/dim/hide the cell.
+public enum CellVisibility
+{
+    Hidden,
+    Explored,
+    Visible
+}
 
 // ActorKind and ActorControlled unify player/monster markers so systems can
 // operate on actors uniformly while still distinguishing player vs monster.
@@ -85,6 +94,15 @@ public struct MonsterBehavior
     public MonsterAIType Type;
     public int Range;
     public int SpecialEnergyCost;
+}
+
+// A monster's memory of the player. Monsters only chase the player while they can see
+// them; once sight is lost they move toward the last position the player was seen at.
+// HasSeenPlayer is false until the monster first spots the player.
+public struct MonsterMemory
+{
+    public bool HasSeenPlayer;
+    public Point LastSeenPosition;
 }
 
 // Marks an entity as a pickup item lying on the map.

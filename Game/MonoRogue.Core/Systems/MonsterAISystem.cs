@@ -14,21 +14,23 @@ public sealed class MonsterAISystem
     private readonly SpatialMap _spatial;
     private readonly CombatSystem _combat;
     private readonly EntityFactory _factory;
+    private readonly PathfindingService _pathfinding;
     private readonly QueryDescription _actorEntities;
 
-    public MonsterAISystem(World world, SpatialMap spatial, CombatSystem combat, EntityFactory factory)
+    public MonsterAISystem(World world, SpatialMap spatial, CombatSystem combat, EntityFactory factory, PathfindingService pathfinding)
     {
         _world = world;
         _spatial = spatial;
         _combat = combat;
         _factory = factory;
-        _actorEntities = new QueryDescription().WithAll<Position, ActorControlled, Energy, MonsterBehavior>();
+        _pathfinding = pathfinding;
+        _actorEntities = new QueryDescription().WithAll<Position, ActorControlled, Energy, MonsterBehavior, MonsterMemory>();
     }
 
     public int ProcessActors(Point playerPosition, Entity playerEntity)
     {
         var actionsExecuted = 0;
-        _world.Query(in _actorEntities, (Entity entity, ref Position monsterPosition, ref ActorControlled actor, ref Energy energy, ref MonsterBehavior behavior) =>
+        _world.Query(in _actorEntities, (Entity entity, ref Position monsterPosition, ref ActorControlled actor, ref Energy energy, ref MonsterBehavior behavior, ref MonsterMemory memory) =>
         {
             if (actor.Kind != ActorKind.Monster)
             {
@@ -38,7 +40,10 @@ public sealed class MonsterAISystem
             var actionsForThisMonster = 0;
             while (actionsForThisMonster < GameConstants.MaxMonsterActionsPerTurn)
             {
-                var action = PlanMonsterAction(monsterPosition.Value, playerPosition, behavior, energy);
+                // Sight is recomputed each action so a monster that moves into or out of the
+                // player's view reacts correctly within the same turn.
+                var seesPlayer = _spatial.HasLineOfSight(monsterPosition.Value, playerPosition);
+                var action = PlanMonsterAction(monsterPosition.Value, playerPosition, behavior, energy, ref memory, seesPlayer);
                 if (action.EnergyCost <= 0 || energy.Current < action.EnergyCost)
                 {
                     break;
@@ -110,32 +115,50 @@ public sealed class MonsterAISystem
         return totalExperience;
     }
 
-    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, MonsterBehavior behavior, Energy energy)
+    private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, MonsterBehavior behavior, Energy energy, ref MonsterMemory memory, bool seesPlayer)
     {
         var delta = playerPosition - monsterPosition;
-        var stepX = Math.Sign(delta.X);
-        var stepY = Math.Sign(delta.Y);
         var distance = Math.Abs(delta.X) + Math.Abs(delta.Y);
 
-        // Adjacent monsters strike directly instead of stepping into the player.
+        // An adjacent monster strikes directly; adjacency implies the player is visible.
         if (distance == 1)
         {
             return new MonsterActionPlan(MonsterActionType.MeleeAttack, Point.None, Math.Max(1, energy.ActionCost));
         }
 
-        if (behavior.Type == MonsterAIType.Breath && distance <= behavior.Range)
+        // Seeing the player refreshes the monster's memory of where the player was.
+        if (seesPlayer)
+        {
+            memory.HasSeenPlayer = true;
+            memory.LastSeenPosition = playerPosition;
+        }
+
+        if (behavior.Type == MonsterAIType.Breath && seesPlayer && distance <= behavior.Range)
         {
             return new MonsterActionPlan(MonsterActionType.BreathAttack, Point.None, Math.Max(1, behavior.SpecialEnergyCost));
         }
 
-        if (stepX != 0)
+        // Chase the live player while visible; otherwise move toward the last position the
+        // player was seen at. A monster that has never seen the player simply waits.
+        Point chaseTarget;
+        if (seesPlayer)
         {
-            return new MonsterActionPlan(MonsterActionType.StepTowardPlayer, new Point(stepX, 0), Math.Max(1, energy.ActionCost));
+            chaseTarget = playerPosition;
+        }
+        else if (memory.HasSeenPlayer)
+        {
+            chaseTarget = memory.LastSeenPosition;
+        }
+        else
+        {
+            return new MonsterActionPlan(MonsterActionType.Wait, Point.None, Math.Max(1, energy.ActionCost));
         }
 
-        if (stepY != 0)
+        // Navigate around walls and other monsters via A* pathfinding. When no path exists
+        // (the target is unreachable), the monster waits instead of bumping into obstacles.
+        if (_pathfinding.GetNextStep(monsterPosition, chaseTarget) is Point nextStep)
         {
-            return new MonsterActionPlan(MonsterActionType.StepTowardPlayer, new Point(0, stepY), Math.Max(1, energy.ActionCost));
+            return new MonsterActionPlan(MonsterActionType.StepTowardPlayer, nextStep - monsterPosition, Math.Max(1, energy.ActionCost));
         }
 
         return new MonsterActionPlan(MonsterActionType.Wait, Point.None, Math.Max(1, energy.ActionCost));

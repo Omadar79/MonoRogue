@@ -27,6 +27,7 @@ public class GameSession : IDisposable
     private readonly MapGenerator _generator;
     private readonly MapSerializer _serializer;
     private readonly EntityFactory _factory;
+    private readonly VisibilityMap _visibility;
 
     private readonly Inventory _inventory = new();
     private readonly PlayerExperience _experience = new();
@@ -59,18 +60,21 @@ public class GameSession : IDisposable
 
         var layout = layoutGenerator ?? new RoomLayoutGenerator();
         _spatial = new SpatialMap(_world, layout.Generate(mapWidth, mapHeight, effectiveSeed));
+        _visibility = new VisibilityMap(_spatial.GetTileMap());
 
         _energy = new EnergySystem(_world);
         _factory = new EntityFactory(_world);
         _effects = new EffectSystem(_world, _factory);
         _combat = new CombatSystem(_world, _effects);
         _playerAction = new PlayerActionSystem(_world, _spatial);
-        _monsterAI = new MonsterAISystem(_world, _spatial, _combat, _factory);
+        var pathfinding = new PathfindingService(_spatial, _world);
+        _monsterAI = new MonsterAISystem(_world, _spatial, _combat, _factory, pathfinding);
         _generator = new MapGenerator(_factory, _spatial, rng);
         _serializer = new MapSerializer(_effects, _inventory, _experience, _factory, new WorldSnapshotReader(_world), _spatial, mapWidth, mapHeight);
 
         _generator.CreateInitialPlayer();
         _generator.GenerateNewMap();
+        RefreshFov();
     }
 
     public void Dispose()
@@ -82,10 +86,27 @@ public class GameSession : IDisposable
 
     public MapData SaveMap() => _serializer.Save();
 
-    public void LoadMap(MapData? mapData) => _serializer.Load(mapData);
+    public void LoadMap(MapData? mapData)
+    {
+        _serializer.Load(mapData);
+        _visibility.Sync(_spatial.GetTileMap());
+        RefreshFov();
+    }
+
+    // Recomputes field of view from the player's current position, marking newly seen cells
+    // as explored. Called after map generation, loading, and every player turn.
+    private void RefreshFov()
+    {
+        if (_playerAction.GetPlayerPosition() is Point playerPos)
+        {
+            _visibility.Compute(playerPos, GameConstants.DefaultFovRadius);
+        }
+    }
 
     // Snapshot of the map for the UI to draw: static terrain (walls/floors) first, then
-    // entities on top so actors/items are drawn over their tile.
+    // entities on top so actors/items are drawn over their tile. Terrain is always emitted
+    // (tagged Hidden/Explored/Visible so the UI can hide or dim it); entities are only
+    // emitted while in the player's field of view.
     public IReadOnlyList<RenderCell> GetRenderSnapshot()
     {
         var cells = new List<RenderCell>();
@@ -98,13 +119,16 @@ public class GameSession : IDisposable
                 var glyph = tiles.GetTile(x, y) == TileKind.Wall
                     ? new CoreGlyph('#', GameConstants.ArgbGray, GameConstants.ArgbBlack)
                     : new CoreGlyph('.', GameConstants.ArgbDarkGray, GameConstants.ArgbBlack);
-                cells.Add(new RenderCell(x, y, glyph));
+                cells.Add(new RenderCell(x, y, glyph, _visibility.GetVisibility(x, y)));
             }
         }
 
         _world.Query(in _renderableEntities, (ref Position pos, ref RenderGlyph glyph) =>
         {
-            cells.Add(new RenderCell(pos.Value.X, pos.Value.Y, glyph.Value));
+            if (_visibility.IsInFov(pos.Value.X, pos.Value.Y))
+            {
+                cells.Add(new RenderCell(pos.Value.X, pos.Value.Y, glyph.Value, CellVisibility.Visible));
+            }
         });
 
         return cells;
@@ -175,6 +199,8 @@ public class GameSession : IDisposable
 
         var (monsterActionsExecuted, effectResult, playerDied, experienceGained) = ResolveMonstersAndEffects(playerExists, playerEntity);
 
+        RefreshFov();
+
         return new TurnResult(playerMoved, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired, playerAttacked, damageDealt, monsterKilled, playerDied, itemPickedUp, itemPickedUpName, ExperienceGained: experienceGained);
     }
 
@@ -197,6 +223,8 @@ public class GameSession : IDisposable
         }
 
         var (monsterActionsExecuted, effectResult, playerDied, experienceGained) = ResolveMonstersAndEffects(playerExists, playerEntity);
+
+        RefreshFov();
 
         return new TurnResult(false, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired,
             false, 0, false, playerDied, false, null, itemUsed, healAmount, usedItemName, experienceGained);

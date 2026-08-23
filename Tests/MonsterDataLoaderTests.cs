@@ -357,6 +357,7 @@ public class MonsterDataLoaderTests
             new BlocksMovement(),
             new ActorControlled { Kind = ActorKind.Monster },
             new MonsterBehavior { Type = MonsterAIType.Melee },
+            new MonsterMemory(),
             new Energy { Current = 0, GainPerTurn = 100, ActionCost = 100 },
             new Attack { Damage = damage });
     }
