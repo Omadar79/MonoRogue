@@ -19,7 +19,7 @@ NOTE: I used AI to help me create tests and separate the SadConsole UI from the 
 dotnet build MonoRogue.slnx
 
 # Run the game
-dotnet run --project MyGame\MyGame.csproj
+dotnet run --project Game\Game.csproj
 
 # Run the test suite
 dotnet test MonoRogue.slnx
@@ -33,12 +33,12 @@ the built executable automatically.
 | Path | Purpose |
 | --- | --- |
 | `MonoRogue.slnx` | Solution file (two projects) |
-| `MyGame\MyGame.csproj` | Executable (WinExe, net10.0) |
-| `MyGame\MonoRogue.Core\` | Gameplay, map generation, ECS components & systems |
-| `MyGame\MonoRogue.Data\` | JSON-backed content definitions and loaders |
-| `MyGame\MonoRogue.UI\` | SadConsole terminal/UI layer |
+| `Game\Game.csproj` | Executable (WinExe, net10.0) |
+| `Game\MonoRogue.Core\` | Gameplay, map generation, ECS components & systems |
+| `Game\MonoRogue.Data\` | JSON-backed content definitions and loaders |
+| `Game\MonoRogue.UI\` | SadConsole terminal/UI layer |
 | `Data\` | Runtime content: `monsters.json`, `items.json` |
-| `Tests\` | xUnit test project referencing `MyGame` |
+| `Tests\` | xUnit test project referencing `Game` |
 
 ## Architecture
 

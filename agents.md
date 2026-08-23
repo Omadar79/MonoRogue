@@ -18,14 +18,14 @@ This document describes how automated agents (AI or CI) should interact with the
 ## Solution structure
 The solution is `MonoRogue.slnx` (XML solution format). It contains exactly two projects:
 
-- `MyGame\MyGame.csproj` — the single executable project (`OutputType=WinExe`, `TargetFramework=net10.0`). It compiles three source folders (not separate assemblies): `MonoRogue.Core`, `MonoRogue.Data`, and `MonoRogue.UI`. `RootNamespace=MonoRogue`.
-- `Tests\MonoRogue.Tests.csproj` — an xUnit test project referencing `MyGame.csproj`. Run with `dotnet test`.
+- `Game\Game.csproj` — the single executable project (`OutputType=WinExe`, `TargetFramework=net10.0`). It compiles three source folders (not separate assemblies): `MonoRogue.Core`, `MonoRogue.Data`, and `MonoRogue.UI`. `RootNamespace=MonoRogue`.
+- `Tests\MonoRogue.Tests.csproj` — an xUnit test project referencing `Game.csproj`. Run with `dotnet test`.
 
-Packages referenced by `MyGame.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopGL`, `RogueSharp`, `SadConsole.Host.MonoGame`, and `SadConsole.Extended`. (Note: `RogueSharp` is referenced but not currently used in source.)
+Packages referenced by `Game.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopGL`, `RogueSharp`, `SadConsole.Host.MonoGame`, and `SadConsole.Extended`. (Note: `RogueSharp` is referenced but not currently used in source.)
 
 ### Directory layout
-- `MyGame\Program.cs` — app entry point and SadConsole host setup (no `--test-content` flag anymore).
-- `MyGame\MonoRogue.Core\` — core gameplay, map generation, ECS components and systems.
+- `Game\Program.cs` — app entry point and SadConsole host setup (no `--test-content` flag anymore).
+- `Game\MonoRogue.Core\` — core gameplay, map generation, ECS components and systems.
   - `GameMain.cs` — top-level game state machine (`GameState`, `InputType`); intentionally decoupled from SadConsole.
   - `GameConstants.cs` — shared tuning constants.
   - `Components.cs` — ECS component definitions and small records (e.g. `RenderCell`, `MonsterBehavior`).
@@ -40,9 +40,9 @@ Packages referenced by `MyGame.csproj`: `Arch` (ECS), `MonoGame.Framework.Deskto
     - `EffectSystem.cs`
     - `PlayerActionSystem.cs`
     - `MonsterAISystem.cs`
-- `MyGame\MonoRogue.Data\` — JSON-backed content definitions and loader utilities. Responsible for monster/item content:
+- `Game\MonoRogue.Data\` — JSON-backed content definitions and loader utilities. Responsible for monster/item content:
   - `ContentLoader.cs`, `MonsterDataLoader.cs`, `ItemDataLoader.cs`
-- `MyGame\MonoRogue.UI\` — terminal/UI-facing code:
+- `Game\MonoRogue.UI\` — terminal/UI-facing code:
   - `RootScreen.cs`, `SadConsoleInputProvider.cs`, `GameSettings.cs`, `ColorConverter.cs`
 - `Data\` (repo root) — runtime content folder: `monsters.json`, `items.json`.
 - `Tests\` — `MonoRogue.Tests.csproj` and `MonsterDataLoaderTests.cs`.
@@ -76,7 +76,7 @@ Packages referenced by `MyGame.csproj`: `Arch` (ECS), `MonoGame.Framework.Deskto
 - Document high-level design decisions in a short comment block or the PR description.
 
 ## Build troubleshooting — duplicate assembly attribute errors (CS0579)
-- Symptom: `dotnet build` fails with CS0579 duplicate attribute errors pointing to generated files under `obj/` (e.g. `MyGame.AssemblyInfo.cs` and `.NETCoreApp,Version=v10.0.AssemblyAttributes.cs`).
+- Symptom: `dotnet build` fails with CS0579 duplicate attribute errors pointing to generated files under `obj/` (e.g. `Game.AssemblyInfo.cs` and `.NETCoreApp,Version=v10.0.AssemblyAttributes.cs`).
 - Root cause: stale or duplicated intermediate files under `obj/` or `bin/` can cause the SDK to generate assembly attributes twice for the same assembly. This often happens after moving the repository between drives/machines or when intermediate files were committed/leftover from an earlier build on a different path.
 
 ### Immediate fix (Windows PowerShell, from repo root)
@@ -90,7 +90,7 @@ dotnet build 'C:\Users\Dustin\MonogameProjects\MonoRogue\MonoRogue.slnx' --no-in
 
 ### Prevention
 - Ensure `bin/` and `obj/` are in `.gitignore` so intermediate files are never checked in.
-- `MyGame.csproj` already sets `<GenerateAssemblyInfo>false</GenerateAssemblyInfo>` and `<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>` with a blank `Properties\AssemblyInfo.cs` to avoid CS0579. Do not remove these settings unless you provide a complete assembly attribute set yourself.
+- `Game.csproj` already sets `<GenerateAssemblyInfo>false</GenerateAssemblyInfo>` and `<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>` with a blank `Properties\AssemblyInfo.cs` to avoid CS0579. Do not remove these settings unless you provide a complete assembly attribute set yourself.
 
 ## CI guidance
 - CI runs should always do a fresh `dotnet restore` and `dotnet build` (no incremental `obj/` caching unless intentionally configured).

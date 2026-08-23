@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="MyGame\MyGame.csproj" />
+  <Project Path="Game\Game.csproj" />
   <Project Path="Tests\MonoRogue.Tests.csproj" />
 </Solution>
