@@ -11,7 +11,7 @@ public sealed class Inventory
 {
     private readonly List<ItemStack> _stacks = new();
 
-    public IReadOnlyList<ItemStack> Stacks => _stacks;
+    public IReadOnlyList<ItemStack> GetStacks() => _stacks;
 
     public void Clear() => _stacks.Clear();
 

@@ -6,24 +6,25 @@ using SadRogue.Primitives;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Converts the ECS world and player inventory to/from plain DTOs (<see cref="MapData"/>)
-/// for persistence. Reading is delegated to <see cref="WorldSnapshotReader"/> and entity
-/// construction to <see cref="EntityFactory"/>; this class only performs the DTO mapping.
-/// File I/O is handled separately by <see cref="MapPersistenceHelpers"/>.
+/// Converts the ECS world and player inventory to/from plain DTOs (<see cref="MapData"/>) for persistence.
+/// Reading is delegated to <see cref="WorldSnapshotReader"/> and entity construction to <see cref="EntityFactory"/>;
+/// this class only performs the DTO mapping. File I/O is handled separately by <see cref="MapPersistenceHelpers"/>.
 /// </summary>
 public sealed class MapSerializer
 {
     private readonly EffectSystem _effects;
     private readonly Inventory _inventory;
+    private readonly PlayerExperience _experience;
     private readonly EntityFactory _factory;
     private readonly WorldSnapshotReader _reader;
     private readonly int _mapWidth;
     private readonly int _mapHeight;
 
-    public MapSerializer(EffectSystem effects, Inventory inventory, EntityFactory factory, WorldSnapshotReader reader, int mapWidth, int mapHeight)
+    public MapSerializer(EffectSystem effects, Inventory inventory, PlayerExperience experience, EntityFactory factory, WorldSnapshotReader reader, int mapWidth, int mapHeight)
     {
         _effects = effects;
         _inventory = inventory;
+        _experience = experience;
         _factory = factory;
         _reader = reader;
         _mapWidth = mapWidth;
@@ -82,6 +83,8 @@ public sealed class MapSerializer
                 attackDamage = attack;
             }
 
+            snapshot.Experience.TryGetValue(renderable.Entity, out var experienceValue);
+
             entities.Add(new EntityDTO(
                 renderable.Position.X,
                 renderable.Position.Y,
@@ -97,7 +100,8 @@ public sealed class MapSerializer
                 behaviorSpecialEnergyCost,
                 healthCurrent,
                 healthMax,
-                attackDamage));
+                attackDamage,
+                experienceValue));
         }
 
         foreach (var effect in snapshot.Effects)
@@ -116,9 +120,9 @@ public sealed class MapSerializer
                 effect.Magnitude));
         }
 
-        var inventory = _inventory.Stacks.Select(s => new ItemStackDTO(s.Name, s.Kind, s.Count, s.Magnitude)).ToList();
+        var inventory = _inventory.GetStacks().Select(s => new ItemStackDTO(s.Name, s.Kind, s.Count, s.Magnitude)).ToList();
 
-        return new MapData(_mapWidth, _mapHeight, entities, effects, Inventory: inventory);
+        return new MapData(_mapWidth, _mapHeight, entities, effects, Inventory: inventory, PlayerExperience: _experience.GetCurrent());
     }
 
     public void Load(MapData? mapData)
@@ -157,7 +161,8 @@ public sealed class MapSerializer
                         e.Attack ?? (e.Glyph.Glyph == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack),
                         ResolveBehavior(e),
                         GameConstants.DefaultEnergyPerTurn,
-                        GameConstants.DefaultActionCost);
+                        GameConstants.DefaultActionCost,
+                        e.Experience);
                 }
                 else
                 {
@@ -192,6 +197,8 @@ public sealed class MapSerializer
                 _inventory.AddStack(new ItemStack(s.Kind, s.Name, s.Count, s.Magnitude));
             }
         }
+
+        _experience.SetExperience(mapData.PlayerExperience);
 
         if (mapData.Effects == null)
         {

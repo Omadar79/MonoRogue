@@ -39,7 +39,7 @@ the built executable automatically.
 
 `MonoRogue.Core` is organized around the Arch ECS:
 
-- **`MapBase`** is a thin orchestrator that composes focused systems, owns persistence,
+- **`GameSession`** is a thin orchestrator that composes focused systems, owns persistence,
   inventory, and turn ordering.
 - **Systems** (under `MonoRogue.Core.Systems`) each own one responsibility:
   energy, combat, effects, player actions, and monster AI.

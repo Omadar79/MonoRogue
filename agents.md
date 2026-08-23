@@ -1,4 +1,4 @@
-ï»¿# MonoRogue Agents Guide
+# MonoRogue Agents Guide
 
 This document describes how automated agents (AI or CI) should interact with the MonoRogue repository. It supersedes any older `agent.md` guidance.
 
@@ -18,45 +18,45 @@ This document describes how automated agents (AI or CI) should interact with the
 ## Solution structure
 The solution is `MonoRogue.slnx` (XML solution format). It contains exactly two projects:
 
-- `MyGame\MyGame.csproj` â€” the single executable project (`OutputType=WinExe`, `TargetFramework=net10.0`). It compiles three source folders (not separate assemblies): `MonoRogue.Core`, `MonoRogue.Data`, and `MonoRogue.UI`. `RootNamespace=MonoRogue`.
-- `Tests\MonoRogue.Tests.csproj` â€” an xUnit test project referencing `MyGame.csproj`. Run with `dotnet test`.
+- `MyGame\MyGame.csproj` — the single executable project (`OutputType=WinExe`, `TargetFramework=net10.0`). It compiles three source folders (not separate assemblies): `MonoRogue.Core`, `MonoRogue.Data`, and `MonoRogue.UI`. `RootNamespace=MonoRogue`.
+- `Tests\MonoRogue.Tests.csproj` — an xUnit test project referencing `MyGame.csproj`. Run with `dotnet test`.
 
 Packages referenced by `MyGame.csproj`: `Arch` (ECS), `MonoGame.Framework.DesktopGL`, `RogueSharp`, `SadConsole.Host.MonoGame`, and `SadConsole.Extended`. (Note: `RogueSharp` is referenced but not currently used in source.)
 
 ### Directory layout
-- `MyGame\Program.cs` â€” app entry point and SadConsole host setup (no `--test-content` flag anymore).
-- `MyGame\MonoRogue.Core\` â€” core gameplay, map generation, ECS components and systems.
-  - `GameMain.cs` â€” top-level game state machine (`GameState`, `InputType`); intentionally decoupled from SadConsole.
-  - `GameConstants.cs` â€” shared tuning constants.
-  - `Components.cs` â€” ECS component definitions and small records (e.g. `RenderCell`, `MonsterBehavior`).
-  - `MapBase.cs` â€” the thin orchestrator that owns the `World`, composes all systems, and handles map generation, turn ordering, inventory, and persistence.
-  - `SpatialMap.cs` â€” spatial index/lookup helper.
-  - `SerializationDTOs.cs` â€” save/load DTOs (`EntityDTO`, `EffectDTO`, `MapData` with a versioned format).
-  - `MapPersistenceHelpers.cs` â€” helpers shared by save/load logic.
-  - `InputCommand.cs` / `IInputProvider.cs` â€” input abstraction.
-  - `Systems\` â€” ECS systems (one responsibility each):
+- `MyGame\Program.cs` — app entry point and SadConsole host setup (no `--test-content` flag anymore).
+- `MyGame\MonoRogue.Core\` — core gameplay, map generation, ECS components and systems.
+  - `GameMain.cs` — top-level game state machine (`GameState`, `InputType`); intentionally decoupled from SadConsole.
+  - `GameConstants.cs` — shared tuning constants.
+  - `Components.cs` — ECS component definitions and small records (e.g. `RenderCell`, `MonsterBehavior`).
+  - `GameSession.cs` — the thin orchestrator that owns the `World`, composes all systems, and handles map generation, turn ordering, inventory, and persistence.
+  - `SpatialMap.cs` — spatial index/lookup helper.
+  - `SerializationDTOs.cs` — save/load DTOs (`EntityDTO`, `EffectDTO`, `MapData` with a versioned format).
+  - `MapPersistenceHelpers.cs` — helpers shared by save/load logic.
+  - `InputCommand.cs` / `IInputProvider.cs` — input abstraction.
+  - `Systems\` — ECS systems (one responsibility each):
     - `EnergySystem.cs`
     - `CombatSystem.cs`
     - `EffectSystem.cs`
     - `PlayerActionSystem.cs`
     - `MonsterAISystem.cs`
-- `MyGame\MonoRogue.Data\` â€” JSON-backed content definitions and loader utilities. Responsible for monster/item content:
+- `MyGame\MonoRogue.Data\` — JSON-backed content definitions and loader utilities. Responsible for monster/item content:
   - `ContentLoader.cs`, `MonsterDataLoader.cs`, `ItemDataLoader.cs`
-- `MyGame\MonoRogue.UI\` â€” terminal/UI-facing code:
+- `MyGame\MonoRogue.UI\` — terminal/UI-facing code:
   - `RootScreen.cs`, `SadConsoleInputProvider.cs`, `GameSettings.cs`, `ColorConverter.cs`
-- `Data\` (repo root) â€” runtime content folder: `monsters.json`, `items.json`.
-- `Tests\` â€” `MonoRogue.Tests.csproj` and `MonsterDataLoaderTests.cs`.
+- `Data\` (repo root) — runtime content folder: `monsters.json`, `items.json`.
+- `Tests\` — `MonoRogue.Tests.csproj` and `MonsterDataLoaderTests.cs`.
 
 ## Architecture and separation of concerns
-- `MapBase` is an orchestrator, not a god class. Gameplay behavior is owned by focused systems under `MonoRogue.Core.Systems`, composed inside `MapBase`.
-- ECS is Arch (`World`, `Entity`, components, `QueryDescription`). `MapBase` uses a stable `World` reference created in its constructor and disposed in `Dispose()`.
+- `GameSession` is an orchestrator, not a god class. Gameplay behavior is owned by focused systems under `MonoRogue.Core.Systems`, composed inside `GameSession`.
+- ECS is Arch (`World`, `Entity`, components, `QueryDescription`). `GameSession` uses a stable `World` reference created in its constructor and disposed in `Dispose()`.
 - System dependencies are intentionally acyclic:
   - `CombatSystem` depends on `EffectSystem`.
   - `MonsterAISystem` depends on `CombatSystem` and `SpatialMap`.
   - `PlayerActionSystem` depends on `SpatialMap`.
   - `EffectSystem` accepts a `Func<Entity,int,int>` (`applyDamage`) callback for poison ticks so it does not form a cycle with `CombatSystem`.
 - Monster AI is data-driven: `MonsterBehavior` component (`Type`, `Range`, `SpecialEnergyCost`) drives `MonsterAISystem`. `InferBehavior(char)` remains only as a fallback for legacy saves / no-content scenarios.
-- Rendering is decoupled from persistence: `RootScreen.DrawMap()` uses `MapBase.GetRenderSnapshot()` (returns `RenderCell` records), not `SaveMap()`.
+- Rendering is decoupled from persistence: `RootScreen.DrawMap()` uses `GameSession.GetRenderSnapshot()` (returns `RenderCell` records), not `SaveMap()`.
 - Save format is versioned (`MapData.Version`). The current version is 4. Newer DTO fields are optional/nullable so legacy saves remain loadable. Persisted entity data includes position, glyph, inventory, behavior, health/max health, and attack.
 - Keep content-loading code in `MonoRogue.Data`; do not move JSON-driven content definitions into the gameplay layer. Keep UI ownership in `MonoRogue.UI`.
 
@@ -75,7 +75,7 @@ Packages referenced by `MyGame.csproj`: `Arch` (ECS), `MonoGame.Framework.Deskto
 - Tests are xUnit `[Fact]` methods, not a custom runner. Do not reintroduce a `--test-content` program flag.
 - Document high-level design decisions in a short comment block or the PR description.
 
-## Build troubleshooting â€” duplicate assembly attribute errors (CS0579)
+## Build troubleshooting — duplicate assembly attribute errors (CS0579)
 - Symptom: `dotnet build` fails with CS0579 duplicate attribute errors pointing to generated files under `obj/` (e.g. `MyGame.AssemblyInfo.cs` and `.NETCoreApp,Version=v10.0.AssemblyAttributes.cs`).
 - Root cause: stale or duplicated intermediate files under `obj/` or `bin/` can cause the SDK to generate assembly attributes twice for the same assembly. This often happens after moving the repository between drives/machines or when intermediate files were committed/leftover from an earlier build on a different path.
 

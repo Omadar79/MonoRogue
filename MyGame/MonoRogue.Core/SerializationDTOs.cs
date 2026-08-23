@@ -24,7 +24,8 @@ public sealed record EntityDTO(
     int BehaviorSpecialEnergyCost = 0,
     int? Health = null,
     int? MaxHealth = null,
-    int? Attack = null);
+    int? Attack = null,
+    int Experience = 0);
 
 public sealed record EffectDTO(
 	int TargetSavedEntityId,
@@ -36,7 +37,7 @@ public sealed record EffectDTO(
 
 public sealed record ItemStackDTO(string Name, ItemKind Kind, int Count, int Magnitude);
 
-public sealed record MapData(int Width, int Height, List<EntityDTO> Entities, List<EffectDTO>? Effects = null, int Version = 4, List<ItemStackDTO>? Inventory = null);
+public sealed record MapData(int Width, int Height, List<EntityDTO> Entities, List<EffectDTO>? Effects = null, int Version = 4, List<ItemStackDTO>? Inventory = null, int PlayerExperience = 0);
 
 public sealed record PlayerState(int X, int Y, GlyphDTO Glyph /* add stats/inventory fields here as needed */);
 

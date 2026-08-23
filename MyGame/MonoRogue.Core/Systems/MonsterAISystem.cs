@@ -77,9 +77,9 @@ public sealed class MonsterAISystem
         return found;
     }
 
-    public void DestroyDeadMonsters()
+    public int DestroyDeadMonsters()
     {
-        var dead = new List<Entity>();
+        var dead = new HashSet<Entity>();
         var query = new QueryDescription().WithAll<ActorControlled, Health>();
         _world.Query(in query, (Entity entity, ref ActorControlled actor, ref Health health) =>
         {
@@ -89,10 +89,25 @@ public sealed class MonsterAISystem
             }
         });
 
+        var totalExperience = 0;
+        if (dead.Count > 0)
+        {
+            var xpQuery = new QueryDescription().WithAll<ActorControlled, Experience>();
+            _world.Query(in xpQuery, (Entity entity, ref Experience experience) =>
+            {
+                if (dead.Contains(entity))
+                {
+                    totalExperience += experience.Value;
+                }
+            });
+        }
+
         foreach (var entity in dead)
         {
             _factory.Destroy(entity);
         }
+
+        return totalExperience;
     }
 
     private MonsterActionPlan PlanMonsterAction(Point monsterPosition, Point playerPosition, MonsterBehavior behavior, Energy energy)

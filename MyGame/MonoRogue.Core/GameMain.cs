@@ -2,11 +2,15 @@ using SadRogue.Primitives;
 
 namespace MonoRogue.Core;
 
+/// <summary>
+/// Enum specifying the current state of the game, which determines what input commands are valid and what UI is displayed.
+/// </summary>
 public enum GameState
 {
     MainMenu,
     Playing,
     Paused,
+    Inventory,
     GameOver
 }
 
@@ -18,7 +22,11 @@ public enum InputType
     TogglePause,
     Move,
     Rest,
-    UseItem,
+    OpenInventory,
+    InventoryUp,
+    InventoryDown,
+    InventorySelect,
+    InventoryCancel,
     MenuUp,
     MenuDown,
     MenuSelect,
@@ -27,123 +35,157 @@ public enum InputType
 }
 
 /// <summary>
-/// Owns the active game session (the <see cref="MapBase"/>) and exposes the gameplay and
+/// Owns the active game session (the <see cref="GameSession"/>) and exposes the gameplay and
 /// persistence commands that the UI forwards to it. The SadConsole layer only renders
-/// <see cref="CurrentMap"/> and sends <see cref="InputCommand"/>s here, keeping game logic
+/// <see cref="GetCurrentSession"/> and sends <see cref="InputCommand"/>s here, keeping game logic
 /// independent of the presentation stack.
 /// </summary>
 public class GameMain
 {
-    private MapBase? _map;
+    private GameSession? _session;
+    private GameState _currentState = GameState.MainMenu;
 
-    /// <summary>The current state of the game. Starts in the main menu.</summary>
-    public GameState CurrentState { get; private set; } = GameState.MainMenu;
+    // The current state of the game. Starts in the main menu.
+    public GameState GetCurrentState() => _currentState;
 
-    /// <summary>The active map, or null until a game is started or loaded.</summary>
-    public MapBase? CurrentMap => _map;
+    // The active map, or null until a game is started or loaded.
+    public GameSession? GetCurrentSession() => _session;
 
-    /// <summary>True once a map has been created (a game is in progress).</summary>
-    public bool HasActiveGame => _map != null;
+    // True once a map has been created (a game is in progress).
+    public bool HasActiveGame()
+    {
+        return _session != null;
+    }
 
-    /// <summary>Starts a brand-new game with a map of the given dimensions.</summary>
+    // Starts a brand-new game with a map of the given dimensions.
     public void StartNewGame(int mapWidth, int mapHeight)
     {
-        _map?.Dispose();
-        _map = new MapBase(mapWidth, mapHeight);
-        CurrentState = GameState.Playing;
+        _session?.Dispose();
+        _session = new GameSession(mapWidth, mapHeight);
+        _currentState = GameState.Playing;
     }
 
     public void GameOver()
     {
-        CurrentState = GameState.GameOver;
+        _currentState = GameState.GameOver;
     }
 
-    /// <summary>Returns to the main menu, disposing any active game session.</summary>
+    // Returns to the main menu, disposing any active game session.
     public void ReturnToMainMenu()
     {
-        _map?.Dispose();
-        _map = null;
-        CurrentState = GameState.MainMenu;
+        _session?.Dispose();
+        _session = null;
+        _currentState = GameState.MainMenu;
     }
 
+    // Returns true if the current state allows gameplay input.
     public bool AllowsGameplayInput()
     {
-        return CurrentState == GameState.Playing;
+        return _currentState == GameState.Playing;
     }
 
+    // Pauses the game if it is currently playing.
     public void PauseGame()
     {
-        if (CurrentState == GameState.Playing)
+        if (_currentState == GameState.Playing)
         {
-            CurrentState = GameState.Paused;
+            _currentState = GameState.Paused;
         }
     }
 
+    // Resumes the game if it is currently paused.
     public void ResumeGame()
     {
-        if (CurrentState == GameState.Paused)
+        if (_currentState == GameState.Paused)
         {
-            CurrentState = GameState.Playing;
+            _currentState = GameState.Playing;
         }
     }
 
+    // Toggles the pause state of the game.
     public void TogglePause()
     {
-        if (CurrentState == GameState.Playing)
+        if (_currentState == GameState.Playing)
         {
-            CurrentState = GameState.Paused;
+            _currentState = GameState.Paused;
         }
-        else if (CurrentState == GameState.Paused)
+        else if (_currentState == GameState.Paused)
         {
-            CurrentState = GameState.Playing;
+            _currentState = GameState.Playing;
         }
     }
 
     // ---- Gameplay commands (delegate to the active map) ----
 
-    public TurnResult? ProcessPlayerTurn(Point playerDelta) => _map?.ProcessPlayerTurn(playerDelta);
+    // Processes a player turn with the given movement delta. Returns the result of the turn or null if no game is active.
+    public TurnResult? ProcessPlayerTurn(Point playerDelta)
+    {
+        return _session?.ProcessPlayerTurn(playerDelta);
+    }
 
-    public TurnResult? ProcessUsePotion() => _map?.ProcessUsePotion();
+    // Processes the use of a potion. Returns the result of the turn or null if no game is active.
+    public TurnResult? ProcessUsePotion()
+    {
+        return _session?.ProcessUsePotion();
+    }
+
+    // ---- Inventory modal ----
+
+    // Opens the inventory selection modal (only from active gameplay). 
+    public void OpenInventory()
+    {
+        if (_currentState == GameState.Playing)
+        {
+            _currentState = GameState.Inventory;
+        }
+    }
+
+    // Closes the inventory selection modal and resumes gameplay.
+    public void CloseInventory()
+    {
+        if (_currentState == GameState.Inventory)
+        {
+            _currentState = GameState.Playing;
+        }
+    }
+
+    // Uses the item at the given inventory index as a full turn. Returns null when no game is active.
+    public TurnResult? UseItemAt(int index)
+    {
+        return _session?.ProcessUseItemAt(index);
+    }
 
     // ---- Persistence ----
 
-    /// <summary>Saves the active game. Returns false when there is no active game.</summary>
+    // Saves the active game. Returns false when there is no active game.
     public bool SaveMap(string path)
     {
-        if (_map == null)
+        if (_session == null)
         {
             return false;
         }
 
-        MapPersistenceHelpers.SaveToFile(_map, path);
+        MapPersistenceHelpers.SaveToFile(_session, path);
         return true;
     }
 
-    /// <summary>
-    /// "Continue": loads a game from disk, creating a fresh map first if one does not
-    /// exist yet, then transitions to <see cref="GameState.Playing"/>. Returns false when
-    /// no save exists or loading fails.
-    /// </summary>
+    // "Continue": loads a game from disk, creating a fresh map first if one does not exist yet, then transitions to
+    // GameState.Playing. Returns false when no save exists or loading fails.
     public bool LoadMap(string path, int mapWidth, int mapHeight)
     {
-        if (_map == null)
-        {
-            _map = new MapBase(mapWidth, mapHeight);
-        }
+        _session ??= new GameSession(mapWidth, mapHeight);
 
-        if (!MapPersistenceHelpers.LoadIntoWorld(_map, path))
+        if (!MapPersistenceHelpers.LoadIntoWorld(_session, path))
         {
             return false;
         }
 
-        CurrentState = GameState.Playing;
+        _currentState = GameState.Playing;
         return true;
     }
 
-    /// <summary>
-    /// Process input provided by an IInputProvider (UI adapter) and return the commands
-    /// that are valid for the current state.
-    /// </summary>
+
+    // Process input provided by an IInputProvider (UI adapter) and return the commands that are valid for the current state.
     public IEnumerable<InputCommand> ProcessInput(IInputProvider inputProvider)
     {
         var incoming = inputProvider.ConsumeCommands();
@@ -161,7 +203,7 @@ public class GameMain
                 case InputType.MenuSelect:
 
                 case InputType.MenuExit:
-                    if (CurrentState == GameState.MainMenu)
+                    if (_currentState == GameState.MainMenu)
                     {
                         results.Add(cmd);
                     }
@@ -169,17 +211,28 @@ public class GameMain
 
                 // Toggle pause only valid when playing or paused
                 case InputType.TogglePause:
-                    if (CurrentState == GameState.Playing || CurrentState == GameState.Paused)
+                    if (_currentState == GameState.Playing || _currentState == GameState.Paused)
                     {
                         results.Add(cmd);
                     }
                     break;
 
-                // Movement only when gameplay input is allowed
+                // Movement / rest / open-inventory only when gameplay input is allowed
                 case InputType.Move:
                 case InputType.Rest:
-                case InputType.UseItem:
+                case InputType.OpenInventory:
                     if (AllowsGameplayInput())
+                    {
+                        results.Add(cmd);
+                    }
+                    break;
+
+                // Inventory navigation/selection only while the inventory modal is open
+                case InputType.InventoryUp:
+                case InputType.InventoryDown:
+                case InputType.InventorySelect:
+                case InputType.InventoryCancel:
+                    if (_currentState == GameState.Inventory)
                     {
                         results.Add(cmd);
                     }
@@ -187,7 +240,7 @@ public class GameMain
 
                 // Confirm (return to menu) only valid after a game over
                 case InputType.Confirm:
-                    if (CurrentState == GameState.GameOver)
+                    if (_currentState == GameState.GameOver)
                     {
                         results.Add(cmd);
                     }

@@ -5,24 +5,24 @@ using System.Text.Json;
 namespace MonoRogue.Core;
 
 /// <summary>
-/// Helper class to centralize map persistence (file I/O) logic.
-/// Keeps JSON/file I/O out of MapBase so core logic remains UI-agnostic and testable.
+/// Helper class to centralize session persistence (file I/O) logic.
+/// Keeps JSON/file I/O out of GameSession so core-logic remains UI-agnostic and testable.
 /// </summary>
 public static class MapPersistenceHelpers
 {
     /// <summary>
-    /// Serialize a map's DTO to JSON and write it to disk. Throws exceptions on failure.
+    /// Serialize a session's DTO to JSON and write it to disk. Throws exceptions on failure.
     /// </summary>
-    public static void SaveToFile(MapBase map, string path)
+    public static void SaveToFile(GameSession session, string path)
     {
-        if (map == null) throw new ArgumentNullException(nameof(map));
-        var mapData = map.SaveMap();
+        if (session == null) throw new ArgumentNullException(nameof(session));
+        var mapData = session.SaveMap();
         var json = JsonSerializer.Serialize(mapData, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(path, json);
     }
 
     /// <summary>
-    /// Read JSON from disk and deserialize a MapData. Returns null if file missing or deserialization fails.
+    /// Read JSON from disk and deserialize a MapData. Returns null if the file is missing or deserialization fails.
     /// </summary>
     public static MapData? LoadFromFile(string path)
     {
@@ -43,11 +43,11 @@ public static class MapPersistenceHelpers
     }
 
     /// <summary>
-    /// Load a map JSON file and populate the supplied MapBase world. Returns true on success.
+    /// Load a session JSON file and populate the supplied GameSession world. Returns true on success.
     /// </summary>
-    public static bool LoadIntoWorld(MapBase map, string path)
+    public static bool LoadIntoWorld(GameSession session, string path)
     {
-        ArgumentNullException.ThrowIfNull(map);
+        ArgumentNullException.ThrowIfNull(session);
         
         var mapData = LoadFromFile(path);
         if (mapData == null)
@@ -55,7 +55,7 @@ public static class MapPersistenceHelpers
             return false;
         }
         
-        map.LoadMap(mapData);
+        session.LoadMap(mapData);
         return true;
     }
 }

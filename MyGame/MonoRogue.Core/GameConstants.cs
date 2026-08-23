@@ -16,6 +16,15 @@ public static class GameConstants
     public const int DefaultMonsterAttack = 3;
     public const int DragonAttack = 5;
 
+    // Experience awarded when a monster is slain. The fallback path (no JSON content)
+    // uses these values; content-driven monsters read their value from monsters.json.
+    public const int DefaultMonsterExperience = 10;
+    public const int DragonExperience = 50;
+
+    // Cumulative XP thresholds for player levels (index 0 => level 1, index 1 => level 2, ...).
+    // Adjustable so progression can be rebalanced without touching game logic.
+    public static readonly int[] DefaultLevelChart = [0, 20, 50, 100, 180, 300];
+
     public const int ArgbBlack = unchecked((int)0xFF000000);
     public const int ArgbWhite = unchecked((int)0xFFFFFFFF);
     public const int ArgbRed = unchecked((int)0xFFFF0000);

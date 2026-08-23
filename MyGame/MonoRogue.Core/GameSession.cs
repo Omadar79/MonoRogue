@@ -11,7 +11,7 @@ namespace MonoRogue.Core;
 /// Entity spawning, serialization, and inventory bookkeeping are delegated to
 /// <see cref="MapGenerator"/>, <see cref="MapSerializer"/>, and <see cref="Inventory"/>.
 /// </summary>
-public class MapBase : IDisposable
+public class GameSession : IDisposable
 {
     private readonly World _world;
 
@@ -29,17 +29,21 @@ public class MapBase : IDisposable
     private readonly EntityFactory _factory;
 
     private readonly Inventory _inventory = new();
+    private readonly PlayerExperience _experience = new();
 
-    // Queries MapBase still owns directly: render snapshots and item pickup.
+    // Queries GameSession still owns directly: render snapshots and item pickup.
     private readonly QueryDescription _renderableEntities;
     private readonly QueryDescription _itemEntities;
 
-    public World World => _world;
-    public int Width => _mapWidth;
-    public int Height => _mapHeight;
-    public IReadOnlyList<ItemStack> Inventory => _inventory.Stacks;
+    public World GetWorld() => _world;
+    public int GetWidth() => _mapWidth;
+    public int GetHeight() => _mapHeight;
+    public IReadOnlyList<ItemStack> GetInventory() => _inventory.GetStacks();
 
-    public MapBase(int mapWidth, int mapHeight)
+    /// <summary>Total experience accumulated this run.</summary>
+    public int GetExperience() => _experience.GetCurrent();
+
+    public GameSession(int mapWidth, int mapHeight)
     {
         _world = World.Create();
         _mapWidth = mapWidth;
@@ -56,7 +60,7 @@ public class MapBase : IDisposable
         _playerAction = new PlayerActionSystem(_world, _spatial);
         _monsterAI = new MonsterAISystem(_world, _spatial, _combat, _factory);
         _generator = new MapGenerator(_factory, _spatial, mapWidth, mapHeight);
-        _serializer = new MapSerializer(_effects, _inventory, _factory, new WorldSnapshotReader(_world), mapWidth, mapHeight);
+        _serializer = new MapSerializer(_effects, _inventory, _experience, _factory, new WorldSnapshotReader(_world), mapWidth, mapHeight);
 
         _generator.CreateInitialPlayer();
         _generator.GenerateNewMap();
@@ -148,34 +152,37 @@ public class MapBase : IDisposable
             }
         }
 
-        var (monsterActionsExecuted, effectResult, playerDied) = ResolveMonstersAndEffects(playerExists, playerEntity);
+        var (monsterActionsExecuted, effectResult, playerDied, experienceGained) = ResolveMonstersAndEffects(playerExists, playerEntity);
 
-        return new TurnResult(playerMoved, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired, playerAttacked, damageDealt, monsterKilled, playerDied, itemPickedUp, itemPickedUpName);
+        return new TurnResult(playerMoved, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired, playerAttacked, damageDealt, monsterKilled, playerDied, itemPickedUp, itemPickedUpName, ExperienceGained: experienceGained);
     }
 
-    // Process a "use potion" action as a full turn: heal -> monster actions -> effects.
-    public TurnResult ProcessUsePotion()
+    // Process a "use item" action as a full turn: apply item effect -> monster actions -> effects.
+    public TurnResult ProcessUseItemAt(int index)
     {
         _energy.AdvanceActorEnergy();
 
         var playerExists = _playerAction.TryGetPlayerEntity(out var playerEntity);
-        var potionUsed = false;
+        var itemUsed = false;
         var healAmount = 0;
+        string? usedItemName = null;
 
         if (playerExists && _energy.TryConsumePlayerEnergy())
         {
-            var before = GetPlayerHealth().Current;
-            if (TryConsumePotion())
+            if (TryUseItemAt(index, out usedItemName, out healAmount))
             {
-                potionUsed = true;
-                healAmount = GetPlayerHealth().Current - before;
+                itemUsed = true;
             }
         }
 
-        var (monsterActionsExecuted, effectResult, playerDied) = ResolveMonstersAndEffects(playerExists, playerEntity);
+        var (monsterActionsExecuted, effectResult, playerDied, experienceGained) = ResolveMonstersAndEffects(playerExists, playerEntity);
 
-        return new TurnResult(false, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired, false, 0, false, playerDied, false, null, potionUsed, healAmount);
+        return new TurnResult(false, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired,
+            false, 0, false, playerDied, false, null, itemUsed, healAmount, usedItemName, experienceGained);
     }
+
+    // Convenience wrapper preserving the legacy "use first potion" behavior.
+    public TurnResult ProcessUsePotion() => ProcessUseItemAt(_inventory.FindPotionIndex());
 
     // ---- Player-facing helpers ----
 
@@ -242,6 +249,16 @@ public class MapBase : IDisposable
         return _inventory.GetGold();
     }
 
+    public int GetPlayerLevel()
+    {
+        return _experience.GetLevel();
+    }
+
+    public int GetXpForNextLevel()
+    {
+        return _experience.XpForNextLevel();
+    }
+
     // ---- Inventory ----
 
     // Pick up all items at the given cell into the player's inventory. Returns the name of the first item picked, or null.
@@ -269,11 +286,20 @@ public class MapBase : IDisposable
         return firstPickupName;
     }
 
-    // Consume one potion from the inventory and heal the player. Returns false if no potion or healing had no effect.
-    public bool TryConsumePotion()
+    // Use the item at the given inventory index, applying its effect and consuming one.
+    // Only potions currently have a use effect; other kinds (e.g. gold) return false.
+    public bool TryUseItemAt(int index, out string? usedItemName, out int healAmount)
     {
-        var index = _inventory.FindPotionIndex();
-        if (index < 0)
+        usedItemName = null;
+        healAmount = 0;
+
+        if (index < 0 || index >= _inventory.GetStacks().Count)
+        {
+            return false;
+        }
+
+        var stack = _inventory.GetStack(index);
+        if (stack.Kind != ItemKind.Potion)
         {
             return false;
         }
@@ -283,14 +309,28 @@ public class MapBase : IDisposable
             return false;
         }
 
-        var stack = _inventory.GetStack(index);
+        var before = _combat.GetHealth(playerEntity).Current;
         if (!_combat.HealEntity(playerEntity, stack.Magnitude))
         {
             return false;
         }
 
         _inventory.ConsumeOne(index);
+        usedItemName = stack.Name;
+        healAmount = _combat.GetHealth(playerEntity).Current - before;
         return true;
+    }
+
+    // Consume one potion from the inventory and heal the player. Returns false if no potion or healing had no effect.
+    public bool TryConsumePotion()
+    {
+        var index = _inventory.FindPotionIndex();
+        if (index < 0)
+        {
+            return false;
+        }
+
+        return TryUseItemAt(index, out _, out _);
     }
 
     // ---- Map geometry ----
@@ -302,7 +342,7 @@ public class MapBase : IDisposable
 
     public Point GetMapCenter()
     {
-        return _spatial.Center;
+        return _spatial.GetCenter();
     }
 
     public bool IsBlocked(Point position)
@@ -316,15 +356,19 @@ public class MapBase : IDisposable
     // effects, and check whether the player died. Previously ProcessPlayerTurn and
     // ProcessUsePotion diverged (only the former called DestroyDeadMonsters); this
     // unifies that behavior.
-    private (int MonsterActionsExecuted, EffectTickResult Effects, bool PlayerDied) ResolveMonstersAndEffects(bool playerExists, Entity playerEntity)
+    private (int MonsterActionsExecuted, EffectTickResult Effects, bool PlayerDied, int ExperienceGained) ResolveMonstersAndEffects(bool playerExists, Entity playerEntity)
     {
-        _monsterAI.DestroyDeadMonsters();
+        var experienceGained = _monsterAI.DestroyDeadMonsters();
+        if (experienceGained > 0)
+        {
+            _experience.Award(experienceGained);
+        }
 
         var monsterActionsExecuted = ProcessActors();
         var effectResult = _effects.ProcessEffects(GameConstants.TurnTimeQuantum, _combat.ApplyDamage);
         var playerDied = playerExists && _combat.IsEntityDead(playerEntity);
 
-        return (monsterActionsExecuted, effectResult, playerDied);
+        return (monsterActionsExecuted, effectResult, playerDied, experienceGained);
     }
 
     private int ProcessActors()

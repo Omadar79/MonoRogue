@@ -9,9 +9,13 @@ using Console = System.Console;
 
 namespace MonoRogue.UI;
 
+/// <summary>
+/// Root screen that handles rendering and input for the entire game. This is the root of the SadConsole UI hierarchy
+/// and owns the various subsurface for the map, right panel, message console, and overlays. 
+/// </summary>
 public class RootScreen : ScreenObject
 {
-    private GameMain _game;
+    private GameMain _game;  // Since we're in the UI, this is our reference to the game logic layer to forward input and render state.
     private int _mapWidth;
     private int _mapHeight;
     private ScreenSurface _mapSurface;
@@ -20,9 +24,11 @@ public class RootScreen : ScreenObject
     private ScreenSurface _rightPanel;
     private ScreenSurface _messageConsole;
     private ScreenSurface _gameOverOverlay;
+    private ScreenSurface _inventoryOverlay;
+    private int _inventorySelectedIndex = 0;
     private int _menuSelectedIndex = 0;
     private readonly string[] _menuOptions = ["New Game", "Save Map", "Load Map", "Exit Game"];
-    private readonly List<string> _messages = new List<string>();
+    private readonly List<string> _messages = [];
 
 
     public RootScreen(GameMain game)
@@ -88,8 +94,16 @@ public class RootScreen : ScreenObject
         _menuOverlay.UseMouse = false;
         _menuOverlay.UseKeyboard = false; // RootScreen handles keyboard centrally
         DrawMainMenu();
-        _menuOverlay.IsVisible = (_game.CurrentState == GameState.MainMenu);
+        _menuOverlay.IsVisible = (_game.GetCurrentState() == GameState.MainMenu);
         Children.Add(_menuOverlay);
+
+        // Create an inventory selection overlay (visible when GameState == Inventory).
+        _inventoryOverlay = new ScreenSurface(totalWidth, totalHeight);
+        _inventoryOverlay.UseMouse = false;
+        _inventoryOverlay.UseKeyboard = false;
+        _inventoryOverlay.IsVisible = false;
+        DrawInventoryOverlay();
+        Children.Add(_inventoryOverlay);
     }
 
     public override bool ProcessKeyboard(Keyboard keyboard)
@@ -131,7 +145,7 @@ public class RootScreen : ScreenObject
                         {
                             if (_game.SaveMap("saved_map.json"))
                             {
-                                AppendMessage($"Saved map. Active effects: {_game.CurrentMap!.GetActiveEffectCount()}");
+                                AppendMessage($"Saved map. Active effects: {_game.GetCurrentSession()!.GetActiveEffectCount()}");
                             }
                             else
                             {
@@ -154,7 +168,7 @@ public class RootScreen : ScreenObject
                                 FadeOut(_menuOverlay);
                                 DrawMap();
                                 DrawRightPanel();
-                                AppendMessage($"Loaded map. Restored active effects: {_game.CurrentMap!.GetActiveEffectCount()}");
+                                AppendMessage($"Loaded map. Restored active effects: {_game.GetCurrentSession()!.GetActiveEffectCount()}");
                             }
                             else
                             {
@@ -191,7 +205,7 @@ public class RootScreen : ScreenObject
                     _game.TogglePause();
 
                     // Fade the pause overlay in or out based on the game state.
-                    if (_game.CurrentState == GameState.Paused)
+                    if (_game.GetCurrentState() == GameState.Paused)
                     {
                         DrawPauseMessage();
                         _pauseOverlay.IsVisible = true;
@@ -243,6 +257,11 @@ public class RootScreen : ScreenObject
                         AppendMessage($"Monsters act: {tr.MonsterActionsExecuted}");
                     }
 
+                    if (tr.ExperienceGained > 0)
+                    {
+                        AppendMessage($"You gain {tr.ExperienceGained} experience.");
+                    }
+
                     if (tr.PlayerDied)
                     {
                         HandlePlayerDeath();
@@ -270,40 +289,9 @@ public class RootScreen : ScreenObject
                         AppendMessage($"Monsters act: {tr.MonsterActionsExecuted}");
                     }
 
-                    if (tr.PlayerDied)
+                    if (tr.ExperienceGained > 0)
                     {
-                        HandlePlayerDeath();
-                    }
-
-                    handled = true;
-                    break;
-                }
-
-                case InputType.UseItem:
-                {
-                    var turnResult = _game.ProcessUsePotion();
-                    if (!turnResult.HasValue)
-                    {
-                        handled = true;
-                        break;
-                    }
-
-                    var tr = turnResult.Value;
-                    DrawMap();
-                    DrawRightPanel();
-
-                    if (tr.PotionUsed)
-                    {
-                        AppendMessage($"You drink a potion and heal {tr.HealAmount} HP");
-                    }
-                    else
-                    {
-                        AppendMessage("You have no potion to use.");
-                    }
-
-                    if (tr.MonsterActionsExecuted > 0)
-                    {
-                        AppendMessage($"Monsters act: {tr.MonsterActionsExecuted}");
+                        AppendMessage($"You gain {tr.ExperienceGained} experience.");
                     }
 
                     if (tr.PlayerDied)
@@ -314,6 +302,36 @@ public class RootScreen : ScreenObject
                     handled = true;
                     break;
                 }
+
+                case InputType.OpenInventory:
+                    _game.OpenInventory();
+                    _inventorySelectedIndex = 0;
+                    DrawInventoryOverlay();
+                    _inventoryOverlay.IsVisible = true;
+                    FadeIn(_inventoryOverlay);
+                    handled = true;
+                    break;
+
+                case InputType.InventoryUp:
+                    MoveInventorySelection(-1);
+                    handled = true;
+                    break;
+
+                case InputType.InventoryDown:
+                    MoveInventorySelection(1);
+                    handled = true;
+                    break;
+
+                case InputType.InventoryCancel:
+                    _game.CloseInventory();
+                    FadeOut(_inventoryOverlay);
+                    handled = true;
+                    break;
+
+                case InputType.InventorySelect:
+                    UseSelectedInventoryItem();
+                    handled = true;
+                    break;
             }
         }
 
@@ -333,7 +351,7 @@ public class RootScreen : ScreenObject
             }
         }
     }
-
+    
     private static void FadeIn(ScreenSurface surface, long duration = 200)
     {
         var fadeDuration = TimeSpan.FromMilliseconds(duration);
@@ -345,9 +363,7 @@ public class RootScreen : ScreenObject
         var fadeDuration = TimeSpan.FromMilliseconds(duration);
         surface.SadComponents.Add(new FadeOut(surface, fadeDuration, null) { HideObject = true });
     }
-
-        
-
+    
     private void DrawPauseMessage()
     {
         ClearSurface(_pauseOverlay);
@@ -373,6 +389,7 @@ public class RootScreen : ScreenObject
     {
         _gameOverOverlay.IsVisible = false;
         _pauseOverlay.IsVisible = false;
+        _inventoryOverlay.IsVisible = false;
         _messages.Clear();
         DrawMessageConsole();
         DrawMainMenu();
@@ -408,7 +425,7 @@ public class RootScreen : ScreenObject
                                 new SadRogue.Primitives.Gradient(colors, colorStops),
                                 (x, y, color) => surface[x, y].Background = color);
 
-        var map = _game.CurrentMap;
+        var map = _game.GetCurrentSession();
         if (map != null)
         {
             var cells = map.GetRenderSnapshot();
@@ -433,14 +450,13 @@ public class RootScreen : ScreenObject
         var surface = _rightPanel.Surface;
         ClearSurface(_rightPanel);
 
-        // Content is inset by one cell on every side so it stays inside the border
-        // that was added around this panel in the constructor.
-        int contentX = 1;
-        int contentWidth = Math.Max(0, surface.Width - contentX - 1);
+        // Content is inset by one cell on every side, so it stays inside the border added in the constructor.
+        var contentX = 1;
+        var contentWidth = Math.Max(0, surface.Width - contentX - 1);
         var line = 1;
 
         // Show a simple player state if present
-        var map = _game.CurrentMap;
+        var map = _game.GetCurrentSession();
         var st = map?.ExtractPlayerState();
         if (st != null)
         {
@@ -453,6 +469,14 @@ public class RootScreen : ScreenObject
 
             _rightPanel.Print(contentX, line, $"Gold: {map!.GetGold()}");
             line += 2;
+
+            _rightPanel.Print(contentX, line, $"Level: {map!.GetPlayerLevel()}");
+            line += 2;
+
+            var xp = map.GetExperience();
+            var nextXp = map.GetXpForNextLevel();
+            _rightPanel.Print(contentX, line, nextXp > 0 ? $"XP: {xp}/{nextXp}" : $"XP: {xp}");
+            line += 2;
         }
 
         const string inv = "Inventory";
@@ -460,7 +484,7 @@ public class RootScreen : ScreenObject
             inv, Color.Yellow, Color.DarkBlue);
 
         // Render inventory stacks below the "Inventory" heading.
-        var inventory = map?.Inventory;
+        var inventory = map?.GetInventory();
         if (inventory == null || inventory.Count == 0)
         {
             _rightPanel.Print(contentX, line + 1, "(empty)");
@@ -528,6 +552,114 @@ public class RootScreen : ScreenObject
             default:
                 return "that way";
         }
+    }
+
+    private int GetInventoryCount()
+    {
+        return _game.GetCurrentSession()?.GetInventory()?.Count ?? 0;
+    }
+
+    private void MoveInventorySelection(int delta)
+    {
+        var count = GetInventoryCount();
+        if (count == 0)
+        {
+            return;
+        }
+
+        _inventorySelectedIndex = ((_inventorySelectedIndex + delta) % count + count) % count;
+        DrawInventoryOverlay();
+    }
+
+    private void UseSelectedInventoryItem()
+    {
+        var map = _game.GetCurrentSession();
+        var inventory = map?.GetInventory();
+
+        _game.CloseInventory();
+        FadeOut(_inventoryOverlay);
+
+        if (map == null || inventory == null || inventory.Count == 0)
+        {
+            return;
+        }
+
+        var index = Math.Clamp(_inventorySelectedIndex, 0, inventory.Count - 1);
+        var turnResult = _game.UseItemAt(index);
+
+        if (!turnResult.HasValue)
+        {
+            return;
+        }
+
+        var tr = turnResult.Value;
+        DrawMap();
+        DrawRightPanel();
+
+        if (tr.PotionUsed)
+        {
+            AppendMessage($"You use {tr.UsedItemName} and heal {tr.HealAmount} HP");
+            Console.WriteLine($"You use {tr.UsedItemName} and heal {tr.HealAmount} HP");
+        }
+        else
+        {
+            AppendMessage("You can't use that item.");
+            Console.WriteLine("You can't use that item.");
+        }
+
+        if (tr.MonsterActionsExecuted > 0)
+        {
+            AppendMessage($"Monsters act: {tr.MonsterActionsExecuted}");
+        }
+
+        if (tr.ExperienceGained > 0)
+        {
+            AppendMessage($"You gain {tr.ExperienceGained} experience.");
+        }
+
+        if (tr.PlayerDied)
+        {
+            HandlePlayerDeath();
+        }
+    }
+
+    private void DrawInventoryOverlay()
+    {
+        var surface = _inventoryOverlay.Surface;
+        ClearSurface(_inventoryOverlay);
+
+        const string title = "Inventory";
+        int titleX = Math.Max(0, (surface.Width - title.Length) / 2);
+        int titleY = Math.Max(0, surface.Height / 4);
+        _inventoryOverlay.Print(titleX, titleY, title, Color.Yellow, Color.DarkBlue);
+
+        var inventory = _game.GetCurrentSession()?.GetInventory();
+        int listStartY = titleY + 2;
+
+        if (inventory == null || inventory.Count == 0)
+        {
+            const string empty = "(empty)";
+            _inventoryOverlay.Print(Math.Max(0, (surface.Width - empty.Length) / 2), listStartY, empty);
+        }
+        else
+        {
+            for (int i = 0; i < inventory.Count; i++)
+            {
+                var text = $"{inventory[i].Name} x{inventory[i].Count}";
+                int x = Math.Max(0, (surface.Width - text.Length) / 2);
+                int y = listStartY + i;
+
+                var fg = i == _inventorySelectedIndex ? Color.Black : Color.White;
+                var bg = i == _inventorySelectedIndex ? Color.White : Color.Black;
+                _inventoryOverlay.Print(x, y, text, fg, bg);
+            }
+        }
+
+        const string hint = "Up/Down: choose   Enter: use   Esc: close";
+        int hintY = Math.Max(0, surface.Height - 3);
+        _inventoryOverlay.Print(Math.Max(0, (surface.Width - hint.Length) / 2), hintY, hint, Color.Gray, Color.Black);
+
+        _inventoryOverlay.IsDirty = true;
     }
 
     private void DrawMainMenu()

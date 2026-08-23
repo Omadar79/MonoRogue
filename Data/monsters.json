@@ -8,7 +8,8 @@
       "gainPerTurn": 100,
       "actionCost": 100,
       "damage": 3,
-      "behavior": "Melee"
+      "behavior": "Melee",
+      "experience": 10
     },
     {
       "name": "dragon",
@@ -20,7 +21,8 @@
       "damage": 5,
       "behavior": "Breath",
       "range": 3,
-      "specialEnergyCost": 300
+      "specialEnergyCost": 300,
+      "experience": 50
     }
   ]
 }

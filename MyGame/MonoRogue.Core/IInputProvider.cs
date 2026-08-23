@@ -1,4 +1,4 @@
-﻿namespace MonoRogue.Core;
+namespace MonoRogue.Core;
 
 public interface IInputProvider
 {

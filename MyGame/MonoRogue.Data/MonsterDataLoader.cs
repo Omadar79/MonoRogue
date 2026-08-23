@@ -18,7 +18,8 @@ public sealed record MonsterDefinition(
     int Damage,
     MonsterAIType Behavior = MonsterAIType.Melee,
     int Range = 1,
-    int SpecialEnergyCost = 0)
+    int SpecialEnergyCost = 0,
+    int Experience = 10)
 {
     public static MonsterDefinition Default(string name, char glyph) =>
         new(name, glyph, unchecked((int)0xFFFF0000), unchecked((int)0xFF000000), 100, 100, 3);
@@ -47,7 +48,8 @@ public static class MonsterDataLoader
                 Math.Max(1, m.Damage),
                 m.Behavior,
                 Math.Max(1, m.Range),
-                Math.Max(0, m.SpecialEnergyCost)))
+                Math.Max(0, m.SpecialEnergyCost),
+                Math.Max(0, m.Experience)))
             .ToList();
     }
 
@@ -65,7 +67,8 @@ public static class MonsterDataLoader
                 Math.Max(1, m.Damage),
                 m.Behavior,
                 Math.Max(1, m.Range),
-                Math.Max(0, m.SpecialEnergyCost)))
+                Math.Max(0, m.SpecialEnergyCost),
+                Math.Max(0, m.Experience)))
             .ToList();
     }
 }

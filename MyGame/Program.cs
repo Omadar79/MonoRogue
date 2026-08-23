@@ -1,4 +1,4 @@
-﻿using SadConsole;
+using SadConsole;
 using SadConsole.Configuration;
 using MonoRogue.Core;
 using MonoRogue.UI;

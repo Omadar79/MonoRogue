@@ -45,7 +45,7 @@ public sealed class EntityFactory
                 }
             );
 
-    public Entity CreateMonster(Point position, CoreGlyph glyph, Health health, int attack, MonsterBehavior behavior, int gainPerTurn, int actionCost) =>
+    public Entity CreateMonster(Point position, CoreGlyph glyph, Health health, int attack, MonsterBehavior behavior, int gainPerTurn, int actionCost, int experience) =>
         _world.Create(
             new Position(position),
             new RenderGlyph(glyph),
@@ -54,6 +54,7 @@ public sealed class EntityFactory
             new BlocksMovement(),
             new ActorControlled { Kind = ActorKind.Monster },
             behavior,
+            new Experience { Value = Math.Max(0, experience) },
             new Energy
             {
                 Current = 0,
@@ -68,20 +69,27 @@ public sealed class EntityFactory
             new Item { Kind = kind, Name = name, Magnitude = Math.Max(1, magnitude) });
 
     /// <summary>A tile/obstacle that blocks movement but is not an actor.</summary>
-    public Entity CreateBlocker(Point position, CoreGlyph glyph) =>
-        _world.Create(new Position(position), new RenderGlyph(glyph), new BlocksMovement());
+    public Entity CreateBlocker(Point position, CoreGlyph glyph)
+    {
+        return _world.Create(new Position(position), new RenderGlyph(glyph), new BlocksMovement());
+    }
+        
 
     /// <summary>A purely cosmetic entity (glyph only, no behavior or blocking).</summary>
-    public Entity CreateDecoration(Point position, CoreGlyph glyph) =>
-        _world.Create(new Position(position), new RenderGlyph(glyph));
+    public Entity CreateDecoration(Point position, CoreGlyph glyph)
+    {
+        return _world.Create(new Position(position), new RenderGlyph(glyph));
+    }
 
     /// <summary>Creates a timed status effect attached to a target entity.</summary>
-    public Entity CreateEffect(Entity target, EffectKind kind, TimedEffect timed, int magnitude) =>
-        _world.Create(
+    public Entity CreateEffect(Entity target, EffectKind kind, TimedEffect timed, int magnitude)
+    {
+        return _world.Create(
             timed,
             new EffectType { Value = kind },
             new EffectTarget { Value = target },
             new EffectMagnitude { Value = Math.Max(0, magnitude) });
+    }
 
     // Infer monster AI from a legacy glyph when no JSON definition provides behavior.
     // Used only for the no-content fallback and for legacy saved maps.

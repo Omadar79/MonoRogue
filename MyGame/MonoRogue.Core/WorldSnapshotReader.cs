@@ -16,6 +16,7 @@ public sealed record WorldSnapshot(
     Dictionary<Entity, MonsterBehavior> Behaviors,
     Dictionary<Entity, Health> Health,
     Dictionary<Entity, int> Attack,
+    Dictionary<Entity, int> Experience,
     List<SnapshotEffect> Effects);
 
 public readonly record struct SnapshotRenderable(Entity Entity, Point Position, CoreGlyph Glyph);
@@ -40,6 +41,7 @@ public sealed class WorldSnapshotReader
     private readonly QueryDescription _behaviorEntities;
     private readonly QueryDescription _healthEntities;
     private readonly QueryDescription _attackEntities;
+    private readonly QueryDescription _experienceEntities;
     private readonly QueryDescription _actorEntities;
 
     public WorldSnapshotReader(World world)
@@ -52,6 +54,7 @@ public sealed class WorldSnapshotReader
         _behaviorEntities = new QueryDescription().WithAll<MonsterBehavior>();
         _healthEntities = new QueryDescription().WithAll<Health>();
         _attackEntities = new QueryDescription().WithAll<Attack>();
+        _experienceEntities = new QueryDescription().WithAll<Experience>();
         _actorEntities = new QueryDescription().WithAll<Position, ActorControlled>();
     }
 
@@ -93,6 +96,12 @@ public sealed class WorldSnapshotReader
             attack[entity] = value.Damage;
         });
 
+        var experience = new Dictionary<Entity, int>();
+        _world.Query(in _experienceEntities, (Entity entity, ref Experience value) =>
+        {
+            experience[entity] = value.Value;
+        });
+
         var renderables = new List<SnapshotRenderable>();
         _world.Query(in _renderableEntities, (Entity entity, ref Position pos, ref RenderGlyph glyph) =>
         {
@@ -105,6 +114,6 @@ public sealed class WorldSnapshotReader
             effects.Add(new SnapshotEffect(target.Value, type.Value, timed, magnitude.Value));
         });
 
-        return new WorldSnapshot(renderables, blockingPositions, playerPositions, items, behaviors, health, attack, effects);
+        return new WorldSnapshot(renderables, blockingPositions, playerPositions, items, behaviors, health, attack, experience, effects);
     }
 }

@@ -72,6 +72,12 @@ public struct Attack
     public int Damage;
 }
 
+// Experience points awarded to the player when this entity (a monster) is slain.
+public struct Experience
+{
+    public int Value;
+}
+
 // Describes how a monster plans its actions. Populated from MonsterDefinition so
 // content can drive AI instead of hardcoding behavior by glyph character.
 public struct MonsterBehavior
@@ -148,7 +154,9 @@ public readonly record struct TurnResult(
     bool ItemPickedUp = false,
     string? ItemPickedUpName = null,
     bool PotionUsed = false,
-    int HealAmount = 0);
+    int HealAmount = 0,
+    string? UsedItemName = null,
+    int ExperienceGained = 0);
 
 public readonly record struct EffectTickResult(int TicksProcessed, int EffectsExpired);
 

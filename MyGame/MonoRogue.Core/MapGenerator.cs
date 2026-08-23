@@ -52,7 +52,7 @@ public sealed class MapGenerator
 
     public void CreateInitialPlayer()
     {
-        var center = _spatial.Center;
+        var center = _spatial.GetCenter();
         _factory.CreatePlayer(
             center,
             new CoreGlyph('@', GameConstants.ArgbWhite, GameConstants.ArgbBlack),
@@ -100,7 +100,8 @@ public sealed class MapGenerator
                 Math.Max(1, definition.Damage),
                 new MonsterBehavior { Type = definition.Behavior, Range = definition.Range, SpecialEnergyCost = definition.SpecialEnergyCost },
                 definition.GainPerTurn,
-                definition.ActionCost);
+                definition.ActionCost,
+                definition.Experience);
 
             break;
         }
@@ -147,12 +148,17 @@ public sealed class MapGenerator
             _factory.CreateMonster(
                 randomPosition,
                 new CoreGlyph((char)glyphCode, foregroundArgb, GameConstants.ArgbBlack),
-                new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
+                new Health
+                    {
+                        Current = GameConstants.DefaultMonsterHealth
+                        , Max = GameConstants.DefaultMonsterHealth
+                    },
                 glyphCode == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack,
                 EntityFactory.InferBehavior((char)glyphCode),
                 gainPerTurn,
-                actionCost);
-
+                actionCost,
+                glyphCode == 'D' ? GameConstants.DragonExperience : GameConstants.DefaultMonsterExperience
+                );
             break;
         }
     }

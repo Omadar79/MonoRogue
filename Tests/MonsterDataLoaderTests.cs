@@ -118,7 +118,7 @@ public class MonsterDataLoaderTests
     [Fact]
     public void Player_CanBeTreatedAsEntity()
     {
-        using var map = new MapBase(10, 10);
+        using var map = new GameSession(10, 10);
 
         // Apply a light effect to the player and verify an effect entity is created.
         var applied = map.TryApplyLightToPlayer(10, 1);
@@ -131,7 +131,7 @@ public class MonsterDataLoaderTests
     [Fact]
     public void Player_CanActRepeatedlyWhilePoisoned()
     {
-        using var map = new MapBase(10, 10);
+        using var map = new GameSession(10, 10);
 
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
         ClearAllExceptPlayer(map);
@@ -164,7 +164,7 @@ public class MonsterDataLoaderTests
     [Fact]
     public void Player_CanRestAndContinueActingWhilePoisoned()
     {
-        using var map = new MapBase(10, 10);
+        using var map = new GameSession(10, 10);
 
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
         ClearAllExceptPlayer(map);
@@ -210,7 +210,7 @@ public class MonsterDataLoaderTests
     [Fact]
     public void Player_CanAttackAndKillMonsterByBumpingIntoIt()
     {
-        using var map = new MapBase(10, 10);
+        using var map = new GameSession(10, 10);
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
         var target = new Point(start.X + 1, start.Y);
 
@@ -243,7 +243,7 @@ public class MonsterDataLoaderTests
     [Fact]
     public void Monster_MeleeAttackDamagesPlayer()
     {
-        using var map = new MapBase(10, 10);
+        using var map = new GameSession(10, 10);
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
         var target = new Point(start.X + 1, start.Y);
 
@@ -264,7 +264,7 @@ public class MonsterDataLoaderTests
     [Fact]
     public void Player_CanPickUpItemByWalkingOntoIt()
     {
-        using var map = new MapBase(10, 10);
+        using var map = new GameSession(10, 10);
         ClearAllExceptPlayer(map);
 
         var start = map.ExtractPlayerState() ?? throw new InvalidOperationException("Expected a player state.");
@@ -277,19 +277,19 @@ public class MonsterDataLoaderTests
         if (!turnResult.ItemPickedUp) throw new InvalidOperationException("Expected to pick up the item.");
         if (turnResult.ItemPickedUpName != "potion") throw new InvalidOperationException("Expected potion pickup name.");
 
-        var potionCount = map.Inventory.Count(i => i.Kind == ItemKind.Potion);
+        var potionCount = map.GetInventory().Count(i => i.Kind == ItemKind.Potion);
         if (potionCount != 1) throw new InvalidOperationException($"Expected 1 potion in inventory but got {potionCount}.");
     }
 
     [Fact]
     public void Player_CanUsePotionToHeal()
     {
-        using var map = new MapBase(10, 10);
+        using var map = new GameSession(10, 10);
         ClearAllExceptPlayer(map);
 
         // Lower the player's health deterministically.
         var query = new QueryDescription().WithAll<ActorControlled, Health>();
-        map.World.Query(in query, (ref ActorControlled actor, ref Health health) =>
+        map.GetWorld().Query(in query, (ref ActorControlled actor, ref Health health) =>
         {
             if (actor.Kind == ActorKind.Player)
             {
@@ -314,43 +314,43 @@ public class MonsterDataLoaderTests
         var healthAfter = map.GetPlayerHealth().Current;
         if (healthAfter != 13) throw new InvalidOperationException($"Expected health 13 after healing but got {healthAfter}.");
 
-        var remaining = map.Inventory.Count(i => i.Kind == ItemKind.Potion);
+        var remaining = map.GetInventory().Count(i => i.Kind == ItemKind.Potion);
         if (remaining != 0) throw new InvalidOperationException($"Expected 0 potions remaining but got {remaining}.");
     }
 
-    private static void SpawnItem(MapBase map, Point position, ItemKind kind, string name, int magnitude)
+    private static void SpawnItem(GameSession map, Point position, ItemKind kind, string name, int magnitude)
     {
-        map.World.Create(
+        map.GetWorld().Create(
             new Position(position),
             RenderGlyph.FromArgb('!', unchecked((int)0xFF00FF00), unchecked((int)0xFF000000)),
             new Item { Kind = kind, Name = name, Magnitude = magnitude });
     }
 
-    private static void ClearAllExceptPlayer(MapBase map)
+    private static void ClearAllExceptPlayer(GameSession map)
     {
         var toDestroy = new HashSet<Entity>();
 
         var actorQuery = new QueryDescription().WithAll<ActorControlled>();
-        map.World.Query(in actorQuery, (Entity entity, ref ActorControlled actor) =>
+        map.GetWorld().Query(in actorQuery, (Entity entity, ref ActorControlled actor) =>
         {
             if (actor.Kind == ActorKind.Monster) toDestroy.Add(entity);
         });
 
         var renderQuery = new QueryDescription().WithAll<Position, RenderGlyph>();
-        map.World.Query(in renderQuery, (Entity entity, ref RenderGlyph glyph) =>
+        map.GetWorld().Query(in renderQuery, (Entity entity, ref RenderGlyph glyph) =>
         {
             if (glyph.Value.Glyph != '@') toDestroy.Add(entity);
         });
 
         foreach (var entity in toDestroy)
         {
-            map.World.Destroy(entity);
+            map.GetWorld().Destroy(entity);
         }
     }
 
-    private static void SpawnMonster(MapBase map, Point position, int health, int damage)
+    private static void SpawnMonster(GameSession map, Point position, int health, int damage)
     {
-        map.World.Create(
+        map.GetWorld().Create(
             new Position(position),
             RenderGlyph.FromArgb('g', unchecked((int)0xFFFF0000), unchecked((int)0xFF000000)),
             new Health { Current = health, Max = health },
@@ -361,11 +361,11 @@ public class MonsterDataLoaderTests
             new Attack { Damage = damage });
     }
 
-    private static void ClearBlockingEntities(MapBase map, HashSet<Point> positions)
+    private static void ClearBlockingEntities(GameSession map, HashSet<Point> positions)
     {
         var blockers = new List<Entity>();
         var query = new QueryDescription().WithAll<Position, BlocksMovement>();
-        map.World.Query(in query, (Entity entity, ref Position pos, ref BlocksMovement blocks) =>
+        map.GetWorld().Query(in query, (Entity entity, ref Position pos, ref BlocksMovement blocks) =>
         {
             if (positions.Contains(pos.Value))
             {
@@ -375,7 +375,7 @@ public class MonsterDataLoaderTests
 
         foreach (var entity in blockers)
         {
-            map.World.Destroy(entity);
+            map.GetWorld().Destroy(entity);
         }
     }
 }

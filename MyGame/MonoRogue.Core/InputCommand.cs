@@ -1,4 +1,4 @@
-﻿namespace MonoRogue.Core;
+namespace MonoRogue.Core;
 
 /// <summary>
 /// A struct that represents a command that the game can process. It is used to decouple the input processing from the game logic.
