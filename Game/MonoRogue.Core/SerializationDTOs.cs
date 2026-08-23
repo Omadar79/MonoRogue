@@ -37,7 +37,15 @@ public sealed record EffectDTO(
 
 public sealed record ItemStackDTO(string Name, ItemKind Kind, int Count, int Magnitude);
 
-public sealed record MapData(int Width, int Height, List<EntityDTO> Entities, List<EffectDTO>? Effects = null, int Version = 4, List<ItemStackDTO>? Inventory = null, int PlayerExperience = 0);
+public sealed record MapData(
+    int Width,
+    int Height,
+    List<EntityDTO> Entities,
+    List<EffectDTO>? Effects = null,
+    int Version = 5,
+    List<ItemStackDTO>? Inventory = null,
+    int PlayerExperience = 0,
+    List<TileKind>? Tiles = null);
 
 public sealed record PlayerState(int X, int Y, GlyphDTO Glyph /* add stats/inventory fields here as needed */);
 

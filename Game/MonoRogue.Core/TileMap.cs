@@ -34,6 +34,18 @@ public sealed class TileMap
     public void SetTile(int x, int y, TileKind kind) => _tiles[x, y] = kind;
     public void SetTile(Point position, TileKind kind) => _tiles[position.X, position.Y] = kind;
 
+    /// <summary>Sets every cell in the grid to the given kind.</summary>
+    public void Fill(TileKind kind)
+    {
+        for (int y = 0; y < GetHeight(); y++)
+        {
+            for (int x = 0; x < GetWidth(); x++)
+            {
+                _tiles[x, y] = kind;
+            }
+        }
+    }
+
     public bool IsWalkable(int x, int y) => _tiles[x, y] == TileKind.Floor;
     public bool IsWalkable(Point position) => IsWalkable(position.X, position.Y);
 

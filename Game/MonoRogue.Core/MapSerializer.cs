@@ -17,16 +17,18 @@ public sealed class MapSerializer
     private readonly PlayerExperience _experience;
     private readonly EntityFactory _factory;
     private readonly WorldSnapshotReader _reader;
+    private readonly SpatialMap _spatial;
     private readonly int _mapWidth;
     private readonly int _mapHeight;
 
-    public MapSerializer(EffectSystem effects, Inventory inventory, PlayerExperience experience, EntityFactory factory, WorldSnapshotReader reader, int mapWidth, int mapHeight)
+    public MapSerializer(EffectSystem effects, Inventory inventory, PlayerExperience experience, EntityFactory factory, WorldSnapshotReader reader, SpatialMap spatial, int mapWidth, int mapHeight)
     {
         _effects = effects;
         _inventory = inventory;
         _experience = experience;
         _factory = factory;
         _reader = reader;
+        _spatial = spatial;
         _mapWidth = mapWidth;
         _mapHeight = mapHeight;
     }
@@ -122,7 +124,9 @@ public sealed class MapSerializer
 
         var inventory = _inventory.GetStacks().Select(s => new ItemStackDTO(s.Name, s.Kind, s.Count, s.Magnitude)).ToList();
 
-        return new MapData(_mapWidth, _mapHeight, entities, effects, Inventory: inventory, PlayerExperience: _experience.GetCurrent());
+        var tiles = CaptureTiles();
+
+        return new MapData(_mapWidth, _mapHeight, entities, effects, Inventory: inventory, PlayerExperience: _experience.GetCurrent(), Tiles: tiles);
     }
 
     public void Load(MapData? mapData)
@@ -133,6 +137,7 @@ public sealed class MapSerializer
         }
 
         _factory.ClearWorld();
+        RestoreTiles(mapData);
 
         var loadedEntityBySavedId = new Dictionary<int, Entity>();
 
@@ -219,6 +224,54 @@ public sealed class MapSerializer
                 effect.TickInterval,
                 effect.Magnitude,
                 effect.TimeUntilNextTick);
+        }
+    }
+
+    // Flatten the static terrain grid into a row-major list of TileKind values.
+    private List<TileKind> CaptureTiles()
+    {
+        var tiles = _spatial.GetTileMap();
+        var data = new List<TileKind>(tiles.GetWidth() * tiles.GetHeight());
+        for (int y = 0; y < tiles.GetHeight(); y++)
+        {
+            for (int x = 0; x < tiles.GetWidth(); x++)
+            {
+                data.Add(tiles.GetTile(x, y));
+            }
+        }
+
+        return data;
+    }
+
+    // Rebuild the static terrain from the save. Legacy saves (version < 5) have no Tiles
+    // field, so we leave the freshly-generated layout untouched to preserve compatibility.
+    private void RestoreTiles(MapData mapData)
+    {
+        if (mapData.Tiles == null)
+        {
+            return;
+        }
+
+        var tiles = _spatial.GetTileMap();
+        tiles.Fill(TileKind.Floor);
+
+        var savedWidth = mapData.Width;
+        var savedHeight = mapData.Height;
+        for (int y = 0; y < tiles.GetHeight(); y++)
+        {
+            for (int x = 0; x < tiles.GetWidth(); x++)
+            {
+                if (x >= savedWidth || y >= savedHeight)
+                {
+                    continue;
+                }
+
+                var index = y * savedWidth + x;
+                if (index < mapData.Tiles.Count)
+                {
+                    tiles.SetTile(x, y, mapData.Tiles[index]);
+                }
+            }
         }
     }
 

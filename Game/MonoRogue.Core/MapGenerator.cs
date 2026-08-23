@@ -6,28 +6,28 @@ namespace MonoRogue.Core;
 /// <summary>
 /// Populates the world with entities: the player, monsters, items, and treasure.
 /// Reads content definitions from the <see cref="MonoRogue.Data"/> loaders and
-/// delegates entity construction to <see cref="EntityFactory"/>. Placement uses
-/// <see cref="Random.Shared"/> with bounded retry loops; callers that need
-/// determinism should seed the RNG.
+/// delegates entity construction to <see cref="EntityFactory"/>. Placement picks
+/// walkable floor cells via <see cref="SpatialMap.GetRandomWalkableCell(Random)"/>
+/// (items) and <see cref="SpatialMap.GetRandomOpenCell(Random)"/> (blocking entities),
+/// so nothing ever spawns inside a wall. The static terrain layout is produced separately
+/// by an <see cref="IDungeonLayoutGenerator"/> before this class runs; the <see cref="Random"/>
+/// instance is injected so placement is reproducible when a fixed seed is supplied.
 /// </summary>
 public sealed class MapGenerator
 {
     private readonly EntityFactory _factory;
     private readonly SpatialMap _spatial;
-    private readonly int _mapWidth;
-    private readonly int _mapHeight;
+    private readonly Random _rng;
 
-    public MapGenerator(EntityFactory factory, SpatialMap spatial, int mapWidth, int mapHeight)
+    public MapGenerator(EntityFactory factory, SpatialMap spatial, Random rng)
     {
         _factory = factory;
         _spatial = spatial;
-        _mapWidth = mapWidth;
-        _mapHeight = mapHeight;
+        _rng = rng;
     }
 
     public void GenerateNewMap()
     {
-        CreateBorderWalls();
         CreateTreasure();
 
         var itemTemplates = ItemDataLoader.LoadDefinitionsFromDefaultSearchPaths();
@@ -51,28 +51,18 @@ public sealed class MapGenerator
         }
     }
 
-    // Carve the static layout: currently a single open room surrounded by border walls.
-    // This is the seam where procedural layout generators will plug in later.
-    private void CreateBorderWalls()
-    {
-        var tiles = _spatial.GetTileMap();
-        for (int x = 0; x < _mapWidth; x++)
-        {
-            tiles.SetTile(x, 0, TileKind.Wall);
-            tiles.SetTile(x, _mapHeight - 1, TileKind.Wall);
-        }
-        for (int y = 0; y < _mapHeight; y++)
-        {
-            tiles.SetTile(0, y, TileKind.Wall);
-            tiles.SetTile(_mapWidth - 1, y, TileKind.Wall);
-        }
-    }
-
     public void CreateInitialPlayer()
     {
         var center = _spatial.GetCenter();
+        // The player is placed first, before any other entities exist, so a walkable center
+        // is the deterministic default. Fall back to a random open cell if a future layout
+        // generator ever carves a wall at the center.
+        var spawn = _spatial.CanOccupy(center)
+            ? center
+            : (_spatial.GetRandomOpenCell(_rng) ?? center);
+
         _factory.CreatePlayer(
-            center,
+            spawn,
             new CoreGlyph('@', GameConstants.ArgbWhite, GameConstants.ArgbBlack),
             new Health { Current = GameConstants.DefaultPlayerHealth, Max = GameConstants.DefaultPlayerHealth },
             GameConstants.DefaultPlayerAttack);
@@ -80,65 +70,48 @@ public sealed class MapGenerator
 
     private void CreateItem(ItemDefinition definition)
     {
-        for (int i = 0; i < 1000; i++)
+        var position = _spatial.GetRandomWalkableCell(_rng);
+        if (position is not Point p)
         {
-            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
-
-            if (_spatial.IsBlocked(randomPosition))
-            {
-                continue;
-            }
-
-            _factory.CreateItem(
-                randomPosition,
-                new CoreGlyph(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
-                definition.Kind,
-                definition.Name,
-                definition.Magnitude);
-
-            break;
+            return;
         }
+
+        _factory.CreateItem(
+            p,
+            new CoreGlyph(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
+            definition.Kind,
+            definition.Name,
+            definition.Magnitude);
     }
 
     private void CreateMonster(MonsterDefinition definition)
     {
-        for (int i = 0; i < 1000; i++)
+        var position = _spatial.GetRandomOpenCell(_rng);
+        if (position is not Point p)
         {
-            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
-
-            if (_spatial.IsBlocked(randomPosition))
-            {
-                continue;
-            }
-
-            _factory.CreateMonster(
-                randomPosition,
-                new CoreGlyph(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
-                new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
-                Math.Max(1, definition.Damage),
-                new MonsterBehavior { Type = definition.Behavior, Range = definition.Range, SpecialEnergyCost = definition.SpecialEnergyCost },
-                definition.GainPerTurn,
-                definition.ActionCost,
-                definition.Experience);
-
-            break;
+            return;
         }
+
+        _factory.CreateMonster(
+            p,
+            new CoreGlyph(definition.Glyph, definition.ForegroundArgb, definition.BackgroundArgb),
+            new Health { Current = GameConstants.DefaultMonsterHealth, Max = GameConstants.DefaultMonsterHealth },
+            Math.Max(1, definition.Damage),
+            new MonsterBehavior { Type = definition.Behavior, Range = definition.Range, SpecialEnergyCost = definition.SpecialEnergyCost },
+            definition.GainPerTurn,
+            definition.ActionCost,
+            definition.Experience);
     }
 
     private void CreateTreasure()
     {
-        for (int i = 0; i < 1000; i++)
+        var position = _spatial.GetRandomOpenCell(_rng);
+        if (position is not Point p)
         {
-            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
-
-            if (_spatial.IsBlocked(randomPosition))
-            {
-                continue;
-            }
-
-            _factory.CreateBlocker(randomPosition, new CoreGlyph('v', GameConstants.ArgbYellow, GameConstants.ArgbBlack));
-            break;
+            return;
         }
+
+        _factory.CreateBlocker(p, new CoreGlyph('v', GameConstants.ArgbYellow, GameConstants.ArgbBlack));
     }
 
     private void CreateGoblin()
@@ -154,30 +127,25 @@ public sealed class MapGenerator
 
     private void CreateMonster(int glyphCode, int foregroundArgb, int gainPerTurn, int actionCost)
     {
-        for (int i = 0; i < 1000; i++)
+        var position = _spatial.GetRandomOpenCell(_rng);
+        if (position is not Point p)
         {
-            var randomPosition = new Point(Random.Shared.Next(0, _mapWidth), Random.Shared.Next(0, _mapHeight));
-
-            if (_spatial.IsBlocked(randomPosition))
-            {
-                continue;
-            }
-
-            _factory.CreateMonster(
-                randomPosition,
-                new CoreGlyph((char)glyphCode, foregroundArgb, GameConstants.ArgbBlack),
-                new Health
-                    {
-                        Current = GameConstants.DefaultMonsterHealth
-                        , Max = GameConstants.DefaultMonsterHealth
-                    },
-                glyphCode == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack,
-                EntityFactory.InferBehavior((char)glyphCode),
-                gainPerTurn,
-                actionCost,
-                glyphCode == 'D' ? GameConstants.DragonExperience : GameConstants.DefaultMonsterExperience
-                );
-            break;
+            return;
         }
+
+        _factory.CreateMonster(
+            p,
+            new CoreGlyph((char)glyphCode, foregroundArgb, GameConstants.ArgbBlack),
+            new Health
+                {
+                    Current = GameConstants.DefaultMonsterHealth
+                    , Max = GameConstants.DefaultMonsterHealth
+                },
+            glyphCode == 'D' ? GameConstants.DragonAttack : GameConstants.DefaultMonsterAttack,
+            EntityFactory.InferBehavior((char)glyphCode),
+            gainPerTurn,
+            actionCost,
+            glyphCode == 'D' ? GameConstants.DragonExperience : GameConstants.DefaultMonsterExperience
+            );
     }
 }

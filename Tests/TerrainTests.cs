@@ -36,4 +36,37 @@ public class TerrainTests
         if (!cells.Any(c => c.X == 5 && c.Y == 5 && c.Glyph.Glyph == '.')) throw new InvalidOperationException("Expected a floor glyph at the center.");
         if (!cells.Any(c => c.Glyph.Glyph == '@')) throw new InvalidOperationException("Expected the player glyph in the snapshot.");
     }
+
+    [Fact]
+    public void Terrain_PersistsAcrossSaveAndLoad()
+    {
+        using var map1 = new GameSession(10, 10);
+
+        // Carve a distinctive wall in the interior so the round-trip is verifiable.
+        map1.GetTileMap().SetTile(5, 5, TileKind.Wall);
+
+        var data = map1.SaveMap();
+
+        using var map2 = new GameSession(10, 10);
+        map2.LoadMap(data);
+
+        var tiles = map2.GetTileMap();
+        if (tiles.GetTile(5, 5) != TileKind.Wall) throw new InvalidOperationException("Expected the interior wall to persist across save/load.");
+        if (tiles.GetTile(4, 4) != TileKind.Floor) throw new InvalidOperationException("Expected an interior floor to persist across save/load.");
+        if (tiles.GetTile(0, 0) != TileKind.Wall) throw new InvalidOperationException("Expected the border wall to persist across save/load.");
+    }
+
+    [Fact]
+    public void LegacySave_WithoutTiles_LeavesFreshlyGeneratedLayoutIntact()
+    {
+        using var map = new GameSession(10, 10);
+
+        // A version-4 save carries no tile data; loading it must not wipe the border walls
+        // that the session constructor already generated.
+        var legacyData = new MapData(10, 10, new List<EntityDTO>(), Version: 4);
+        map.LoadMap(legacyData);
+
+        if (map.GetTileMap().GetTile(0, 0) != TileKind.Wall) throw new InvalidOperationException("Expected border walls to remain after loading a legacy save.");
+        if (map.GetTileMap().GetTile(5, 5) != TileKind.Floor) throw new InvalidOperationException("Expected interior floor to remain after loading a legacy save.");
+    }
 }

@@ -43,7 +43,7 @@ public class GameSession : IDisposable
     /// <summary>Total experience accumulated this run.</summary>
     public int GetExperience() => _experience.GetCurrent();
 
-    public GameSession(int mapWidth, int mapHeight)
+    public GameSession(int mapWidth, int mapHeight, int? seed = null, IDungeonLayoutGenerator? layoutGenerator = null)
     {
         _world = World.Create();
         _mapWidth = mapWidth;
@@ -52,15 +52,22 @@ public class GameSession : IDisposable
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
         _itemEntities = new QueryDescription().WithAll<Position, Item>();
 
-        _spatial = new SpatialMap(_world, mapWidth, mapHeight);
+        // Derive a concrete seed so the layout and entity placement share a single,
+        // reproducible source of randomness (null => a fresh, non-deterministic seed).
+        var effectiveSeed = seed ?? new Random().Next();
+        var rng = new Random(effectiveSeed);
+
+        var layout = layoutGenerator ?? new RoomLayoutGenerator();
+        _spatial = new SpatialMap(_world, layout.Generate(mapWidth, mapHeight, effectiveSeed));
+
         _energy = new EnergySystem(_world);
         _factory = new EntityFactory(_world);
         _effects = new EffectSystem(_world, _factory);
         _combat = new CombatSystem(_world, _effects);
         _playerAction = new PlayerActionSystem(_world, _spatial);
         _monsterAI = new MonsterAISystem(_world, _spatial, _combat, _factory);
-        _generator = new MapGenerator(_factory, _spatial, mapWidth, mapHeight);
-        _serializer = new MapSerializer(_effects, _inventory, _experience, _factory, new WorldSnapshotReader(_world), mapWidth, mapHeight);
+        _generator = new MapGenerator(_factory, _spatial, rng);
+        _serializer = new MapSerializer(_effects, _inventory, _experience, _factory, new WorldSnapshotReader(_world), _spatial, mapWidth, mapHeight);
 
         _generator.CreateInitialPlayer();
         _generator.GenerateNewMap();

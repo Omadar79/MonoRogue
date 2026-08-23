@@ -56,11 +56,13 @@ public class GameMain
         return _session != null;
     }
 
-    // Starts a brand-new game with a map of the given dimensions.
-    public void StartNewGame(int mapWidth, int mapHeight)
+    // Starts a brand-new game with a procedurally generated rooms-and-corridors map. An
+    // optional seed makes generation reproducible; when omitted, a non-deterministic seed
+    // is used.
+    public void StartNewGame(int mapWidth, int mapHeight, int? seed = null)
     {
         _session?.Dispose();
-        _session = new GameSession(mapWidth, mapHeight);
+        _session = new GameSession(mapWidth, mapHeight, seed, new RoomsAndCorridorsLayoutGenerator());
         _currentState = GameState.Playing;
     }
 
