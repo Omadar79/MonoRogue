@@ -334,13 +334,19 @@ public class RootScreen : ScreenObject
         }
     }
 
-    private static readonly TimeSpan FadeDuration = TimeSpan.FromMilliseconds(200);
+    private static void FadeIn(ScreenSurface surface, long duration = 200)
+    {
+        var fadeDuration = TimeSpan.FromMilliseconds(duration);
+        surface.SadComponents.Add(new FadeIn(surface, fadeDuration, null));
+    }
 
-    private static void FadeIn(ScreenSurface surface) =>
-        surface.SadComponents.Add(new FadeIn(surface, FadeDuration, null));
+    private static void FadeOut(ScreenSurface surface, long duration = 200)
+    {
+        var fadeDuration = TimeSpan.FromMilliseconds(duration);
+        surface.SadComponents.Add(new FadeOut(surface, fadeDuration, null) { HideObject = true });
+    }
 
-    private static void FadeOut(ScreenSurface surface) =>
-        surface.SadComponents.Add(new FadeOut(surface, FadeDuration, null) { HideObject = true });
+        
 
     private void DrawPauseMessage()
     {
@@ -371,7 +377,7 @@ public class RootScreen : ScreenObject
         DrawMessageConsole();
         DrawMainMenu();
         _menuOverlay.IsVisible = true;
-        FadeIn(_menuOverlay);
+        FadeIn(_menuOverlay,0);
     }
 
     private void DrawGameOverMessage()
