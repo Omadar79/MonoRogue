@@ -353,7 +353,7 @@ public class RootScreen : ScreenObject
     // Draws a frame border inside the surface's own outer cells (rather than SadConsole's
     // Border.CreateForSurface, which draws 1 cell outside and overlaps adjacent surfaces).
     // This keeps the map viewport fully visible with no clipping.
-    private static void DrawBoxBorder(ScreenSurface screen, string title)
+    private static void DrawBoxBorder(ScreenSurface screen, string title, Color? titleColor = null)
     {
         var surface = screen.Surface;
         int width = surface.Width;
@@ -364,6 +364,7 @@ public class RootScreen : ScreenObject
         }
 
         var borderColor = Color.Gray;
+        var headingColor = titleColor ?? borderColor;
 
         // Corners.
         surface[0, 0].Glyph = '+';
@@ -400,7 +401,7 @@ public class RootScreen : ScreenObject
         // Title rendered into the top edge.
         if (!string.IsNullOrEmpty(title) && width > 3)
         {
-            screen.Print(2, 0, title, borderColor, Color.Black);
+            screen.Print(2, 0, title, headingColor, Color.Black);
         }
     }
     
@@ -512,7 +513,7 @@ public class RootScreen : ScreenObject
     {
         var surface = _rightPanel.Surface;
         ClearSurface(_rightPanel);
-        DrawBoxBorder(_rightPanel, "Status");
+        DrawBoxBorder(_rightPanel, "Status", Color.Yellow);
 
         // Content is inset by one cell on every side, so it stays inside the border.
         var contentX = 1;
@@ -568,7 +569,7 @@ public class RootScreen : ScreenObject
     {
         var surface = _messageConsole.Surface;
         ClearSurface(_messageConsole);
-        DrawBoxBorder(_messageConsole, "Log");
+        DrawBoxBorder(_messageConsole, "Log", Color.Cyan);
 
         // Render messages inside the border.
         int maxLines = Math.Max(0, surface.Height - 2);
