@@ -392,8 +392,8 @@ public class RootScreen : ScreenObject
 
         ClearSurface(_mapSurface);
 
-        Color[] colors = new[] { Color.LightGreen, Color.Coral, Color.CornflowerBlue, Color.DarkGreen };
-        float[] colorStops = new[] { 0f, 0.35f, 0.75f, 1f };
+        Color[] colors = [Color.LightGreen, Color.Coral, Color.CornflowerBlue, Color.DarkGreen];
+        float[] colorStops = [0f, 0.35f, 0.75f, 1f];
         Algorithms.GradientFill(_mapSurface.FontSize,
                                 surface.Area.Center,
                                 Math.Max(1, surface.Width / 3),
