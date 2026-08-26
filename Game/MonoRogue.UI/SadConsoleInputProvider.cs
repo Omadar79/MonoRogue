@@ -84,7 +84,8 @@ public class SadConsoleInputProvider : IInputProvider
         }
 
         // Pause/unpause is allowed when playing or paused.
-        if (_keyboard.IsKeyPressed(Keys.Escape) && (_game.GetCurrentState() == GameState.Playing || _game.GetCurrentState() == GameState.Paused))
+        if (_keyboard.IsKeyPressed(Keys.Escape) && 
+            (_game.GetCurrentState() == GameState.Playing || _game.GetCurrentState() == GameState.Paused))
         {
             results.Add(new InputCommand(InputType.TogglePause, new SadRogue.Primitives.Point(0, 0)));
         }
