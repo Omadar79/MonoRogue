@@ -104,6 +104,16 @@ public sealed class EntityFactory
     {
         return _world.Create(new Position(position), new RenderGlyph(glyph), new BlocksMovement());
     }
+
+    /// <summary>A staircase. Non-blocking; triggers a level change when the player steps on it.</summary>
+    public Entity CreateStairs(Point position, CoreGlyph glyph, StairDirection direction)
+    {
+        return _world.Create(
+            new Position(position),
+            new RenderGlyph(glyph),
+            new Stairs { Direction = direction }
+        );
+    }
         
 
     /// <summary>A purely cosmetic entity (glyph only, no behavior or blocking).</summary>

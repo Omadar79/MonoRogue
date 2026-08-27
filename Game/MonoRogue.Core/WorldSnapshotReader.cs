@@ -12,12 +12,14 @@ public sealed record WorldSnapshot(
     List<SnapshotRenderable> Renderables,
     HashSet<Point> BlockingPositions,
     HashSet<Point> PlayerPositions,
+    HashSet<Entity> PlayerEntities,
     Dictionary<Entity, SnapshotItem> Items,
     Dictionary<Entity, MonsterBehavior> Behaviors,
     Dictionary<Entity, Health> Health,
     Dictionary<Entity, int> Attack,
     Dictionary<Entity, int> Experience,
-    List<SnapshotEffect> Effects);
+    List<SnapshotEffect> Effects,
+    Dictionary<Entity, StairDirection> Stairs);
 
 public readonly record struct SnapshotRenderable(Entity Entity, Point Position, CoreGlyph Glyph);
 
@@ -42,6 +44,7 @@ public sealed class WorldSnapshotReader
     private readonly QueryDescription _attackEntities;
     private readonly QueryDescription _experienceEntities;
     private readonly QueryDescription _actorEntities;
+    private readonly QueryDescription _stairsEntities;
 
     public WorldSnapshotReader(World world)
     {
@@ -55,7 +58,11 @@ public sealed class WorldSnapshotReader
         _attackEntities = new QueryDescription().WithAll<Attack>();
         _experienceEntities = new QueryDescription().WithAll<Experience>();
         _actorEntities = new QueryDescription().WithAll<Position, ActorControlled>();
+        _stairsEntities = new QueryDescription().WithAll<Position, Stairs>();
     }
+
+    /// <summary>The world this reader queries.</summary>
+    public World GetWorld() => _world;
 
     public WorldSnapshot Capture()
     {
@@ -63,11 +70,13 @@ public sealed class WorldSnapshotReader
         _world.Query(in _blockingEntities, (ref Position pos) => { blockingPositions.Add(pos.Value); });
 
         var playerPositions = new HashSet<Point>();
-        _world.Query(in _actorEntities, (ref Position pos, ref ActorControlled actor) =>
+        var playerEntities = new HashSet<Entity>();
+        _world.Query(in _actorEntities, (Entity entity, ref Position pos, ref ActorControlled actor) =>
         {
             if (actor.Kind == ActorKind.Player)
             {
                 playerPositions.Add(pos.Value);
+                playerEntities.Add(entity);
             }
         });
 
@@ -113,6 +122,51 @@ public sealed class WorldSnapshotReader
             effects.Add(new SnapshotEffect(target.Value, type.Value, timed, magnitude.Value));
         });
 
-        return new WorldSnapshot(renderables, blockingPositions, playerPositions, items, behaviors, health, attack, experience, effects);
+        var stairs = new Dictionary<Entity, StairDirection>();
+        _world.Query(in _stairsEntities, (Entity entity, ref Stairs stair) =>
+        {
+            stairs[entity] = stair.Direction;
+        });
+
+        return new WorldSnapshot(renderables, blockingPositions, playerPositions, playerEntities, items, behaviors, health, attack, experience, effects, stairs);
+    }
+
+    /// <summary>Returns the player entity, or null if no player exists in the world.</summary>
+    public Entity? GetPlayerEntity()
+    {
+        Entity? player = null;
+        _world.Query(in _actorEntities, (Entity entity, ref ActorControlled actor) =>
+        {
+            if (actor.Kind == ActorKind.Player)
+            {
+                player = entity;
+            }
+        });
+        return player;
+    }
+
+    /// <summary>All entities that have a position (renderables), including the player.</summary>
+    public List<Entity> GetAllEntities()
+    {
+        var entities = new List<Entity>();
+        _world.Query(in _renderableEntities, (Entity entity) =>
+        {
+            entities.Add(entity);
+        });
+        return entities;
+    }
+
+    /// <summary>Effects currently targeting a specific entity (e.g. effects on the player).</summary>
+    public List<SnapshotEffect> GetEffectsTargeting(Entity target)
+    {
+        var effects = new List<SnapshotEffect>();
+        _world.Query(in _effectEntities, (ref TimedEffect timed, ref EffectType type, ref EffectTarget effectTarget, ref EffectMagnitude magnitude) =>
+        {
+            if (effectTarget.Value == target)
+            {
+                effects.Add(new SnapshotEffect(effectTarget.Value, type.Value, timed, magnitude.Value));
+            }
+        });
+        return effects;
     }
 }

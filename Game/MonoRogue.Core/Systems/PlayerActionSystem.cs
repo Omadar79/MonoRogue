@@ -93,4 +93,19 @@ public sealed class PlayerActionSystem
 
         return moved;
     }
+
+    /// <summary>
+    /// Teleports the player to a cell without movement validation or energy cost. Used when
+    /// arriving on a new dungeon level (the destination is known-good, e.g. a staircase).
+    /// </summary>
+    public void SetPlayerPosition(Point destination)
+    {
+        _world.Query(in _playerPositionEntities, (ref Position position, ref ActorControlled actor) =>
+        {
+            if (actor.Kind == ActorKind.Player)
+            {
+                position.Value = destination;
+            }
+        });
+    }
 }

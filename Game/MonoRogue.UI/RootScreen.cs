@@ -29,6 +29,7 @@ public class RootScreen : ScreenObject
     private int _menuSelectedIndex = 0;
     private string[] _menuOptions = [];
     private readonly List<string> _messages = [];
+    private int _lastDepth = 1;
 
 
     public RootScreen(GameMain game)
@@ -208,7 +209,14 @@ public class RootScreen : ScreenObject
                     DrawMap();
                     DrawRightPanel();
                     var direction = ToDirectionText(cmd.Delta);
-                    if (tr.PlayerAttacked)
+                    if (tr.LevelChanged)
+                    {
+                        AppendMessage(tr.Depth > _lastDepth
+                            ? $"You descend to depth {tr.Depth}"
+                            : $"You ascend to depth {tr.Depth}");
+                        _lastDepth = tr.Depth;
+                    }
+                    else if (tr.PlayerAttacked)
                     {
                         AppendMessage($"You strike for {tr.DamageDealt} damage");
                         if (tr.MonsterKilled)
@@ -538,6 +546,9 @@ public class RootScreen : ScreenObject
             line += 2;
 
             _rightPanel.Print(contentX, line, $"Level: {map!.GetPlayerLevel()}");
+            line += 2;
+
+            _rightPanel.Print(contentX, line, $"Depth: {map!.GetDepth()}/{map!.GetMaxDepth()}");
             line += 2;
 
             var xp = map.GetExperience();

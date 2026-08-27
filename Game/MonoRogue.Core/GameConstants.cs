@@ -37,4 +37,10 @@ public static class GameConstants
 
     // How far (in cells) the player can see for field-of-view computation.
     public const int DefaultFovRadius = 10;
+
+    // Number of dungeon levels in a run. Level 1 is the top; the bottom level
+    // has no down-stairs.
+    public const int MaxDungeonDepth = 6;
+
+    public const int ArgbCyan = unchecked((int)0xFF00FFFF);
 }

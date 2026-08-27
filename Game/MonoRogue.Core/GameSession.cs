@@ -31,13 +31,26 @@ public class GameSession : IDisposable
     private readonly Inventory _inventory = new();
     private readonly PlayerExperience _experience = new();
 
+    // Multi-level state: current depth, the run seed (level seeds are derived from it),
+    // and a cache of levels the player has visited but left. Unvisited levels are
+    // generated lazily the first time the player enters them.
+    private int _depth = 1;
+    private readonly int _runSeed;
+    private readonly int _maxDepth = GameConstants.MaxDungeonDepth;
+    private readonly Dictionary<int, LevelDataDTO> _levelCache = new();
+    private readonly IDungeonLayoutGenerator _layout;
+    private readonly Random _rng;
+
     // Queries GameSession still owns directly: render snapshots and item pickup.
     private readonly QueryDescription _renderableEntities;
     private readonly QueryDescription _itemEntities;
+    private readonly QueryDescription _stairsEntities;
 
     public World GetWorld() => _world;
     public int GetWidth() => _mapWidth;
     public int GetHeight() => _mapHeight;
+    public int GetDepth() => _depth;
+    public int GetMaxDepth() => _maxDepth;
     public IReadOnlyList<ItemStack> GetInventory() => _inventory.GetStacks();
 
     //Total experience accumulated this run.
@@ -51,15 +64,17 @@ public class GameSession : IDisposable
 
         _renderableEntities = new QueryDescription().WithAll<Position, RenderGlyph>();
         _itemEntities = new QueryDescription().WithAll<Position, Item>();
+        _stairsEntities = new QueryDescription().WithAll<Position, Stairs>();
 
         // Derive a concrete seed so the layout and entity placement share a single,
         // reproducible source of randomness (null => a fresh, non-deterministic seed).
-        var effectiveSeed = seed ?? new Random().Next();
-        var rng = new Random(effectiveSeed);
+        _runSeed = seed ?? new Random().Next();
+        _rng = new Random(_runSeed);
 
-        var layout = layoutGenerator ?? new RoomLayoutGenerator();
-        _spatial = new SpatialMap(_world, layout.Generate(mapWidth, mapHeight, effectiveSeed));
-        _visibility = new VisibilityMap(_spatial.GetTileMap());
+        _layout = layoutGenerator ?? new RoomLayoutGenerator();
+        var tiles = _layout.Generate(mapWidth, mapHeight, _runSeed);
+        _spatial = new SpatialMap(_world, tiles);
+        _visibility = new VisibilityMap(tiles);
 
         _energy = new EnergySystem(_world);
         _factory = new EntityFactory(_world);
@@ -68,11 +83,17 @@ public class GameSession : IDisposable
         _playerAction = new PlayerActionSystem(_world, _spatial);
         var pathfinding = new PathfindingService(_spatial, _world);
         _monsterAI = new MonsterAISystem(_world, _spatial, _combat, _factory, pathfinding);
-        _generator = new MapGenerator(_factory, _spatial, rng);
-        _serializer = new MapSerializer(_effects, _inventory, _experience, _factory, new WorldSnapshotReader(_world), _spatial, mapWidth, mapHeight);
+        _generator = new MapGenerator(_factory, _spatial, _rng);
+        _serializer = new MapSerializer(_effects, _inventory, _experience, _factory, new WorldSnapshotReader(_world), _spatial, _visibility, mapWidth, mapHeight);
 
-        _generator.CreateInitialPlayer();
-        _generator.GenerateNewMap();
+        // Level 1: the player starts at the map center of a freshly generated level.
+        var spawn = _spatial.GetCenter();
+        if (!_spatial.CanOccupy(spawn))
+        {
+            spawn = _spatial.GetRandomOpenCell(_rng) ?? spawn;
+        }
+        _generator.CreateInitialPlayer(spawn);
+        _generator.GenerateNewLevel(1, _maxDepth);
         RefreshFov();
     }
 
@@ -83,12 +104,25 @@ public class GameSession : IDisposable
 
     // ---- Persistence ----
 
-    public MapData SaveMap() => _serializer.Save();
+    public MapData SaveMap() => _serializer.Save(_depth, _runSeed, _levelCache);
 
     public void LoadMap(MapData? mapData)
     {
-        _serializer.Load(mapData);
+        var levelCache = new Dictionary<int, LevelDataDTO>();
+        _serializer.Load(mapData, out var depth, out _, out levelCache);
+        _depth = depth;
+        _levelCache.Clear();
+        foreach (var level in levelCache)
+        {
+            _levelCache[level.Key] = level.Value;
+        }
+
         _visibility.Sync(_spatial.GetTileMap());
+        if (mapData?.Visibility != null)
+        {
+            _visibility.RestoreExplored(mapData.Visibility);
+        }
+
         RefreshFov();
     }
 
@@ -164,6 +198,9 @@ public class GameSession : IDisposable
         var playerExists = _playerAction.TryGetPlayerEntity(out var playerEntity);
         var playerPosition = _playerAction.GetPlayerPosition();
 
+        var levelChanged = false;
+        var newDepth = _depth;
+
         if (playerExists && playerPosition is Point pos)
         {
             if (playerDelta != Point.None)
@@ -186,6 +223,14 @@ public class GameSession : IDisposable
                     {
                         itemPickedUpName = TryPickupItemsAt(destination);
                         itemPickedUp = itemPickedUpName != null;
+
+                        // Stepping onto a staircase changes level instead of running monster AI.
+                        if (GetStairsAt(destination) is StairDirection direction && TryChangeLevel(direction))
+                        {
+                            levelChanged = true;
+                            newDepth = _depth;
+                            playerMoved = false;
+                        }
                     }
                 }
             }
@@ -195,11 +240,29 @@ public class GameSession : IDisposable
             }
         }
 
-        var (monsterActionsExecuted, effectResult, playerDied, experienceGained) = ResolveMonstersAndEffects(playerExists, playerEntity);
+        // A level change ends the turn early: dead-monster cleanup and effect ticks still
+        // happen, but monsters on the departed level do not act.
+        if (levelChanged)
+        {
+            var experienceGained = _monsterAI.DestroyDeadMonsters();
+            if (experienceGained > 0)
+            {
+                _experience.Award(experienceGained);
+            }
+
+            var effectResult = _effects.ProcessEffects(GameConstants.TurnTimeQuantum, _combat.ApplyDamage);
+            var playerDied = playerExists && _combat.IsEntityDead(playerEntity);
+
+            RefreshFov();
+
+            return new TurnResult(playerMoved, 0, effectResult.TicksProcessed, effectResult.EffectsExpired, playerAttacked, damageDealt, monsterKilled, playerDied, itemPickedUp, itemPickedUpName, ExperienceGained: experienceGained, LevelChanged: true, Depth: _depth);
+        }
+
+        var (monsterActionsExecuted, effectResult2, playerDied2, experienceGained2) = ResolveMonstersAndEffects(playerExists, playerEntity);
 
         RefreshFov();
 
-        return new TurnResult(playerMoved, monsterActionsExecuted, effectResult.TicksProcessed, effectResult.EffectsExpired, playerAttacked, damageDealt, monsterKilled, playerDied, itemPickedUp, itemPickedUpName, ExperienceGained: experienceGained);
+        return new TurnResult(playerMoved, monsterActionsExecuted, effectResult2.TicksProcessed, effectResult2.EffectsExpired, playerAttacked, damageDealt, monsterKilled, playerDied2, itemPickedUp, itemPickedUpName, ExperienceGained: experienceGained2, LevelChanged: levelChanged, Depth: newDepth);
     }
 
     // Process a "use item" action as a full turn: apply item effect -> monster actions -> effects.
@@ -400,6 +463,81 @@ public class GameSession : IDisposable
     public bool IsBlocked(Point position)
     {
         return _spatial.IsBlocked(position);
+    }
+
+    // ---- Multi-level dungeon ----
+
+    /// <summary>The staircase at the given cell, or null if the cell holds no stairs.</summary>
+    public StairDirection? GetStairsAt(Point position)
+    {
+        StairDirection? result = null;
+        _world.Query(in _stairsEntities, (ref Position pos, ref Stairs stairs) =>
+        {
+            if (pos.Value == position)
+            {
+                result ??= stairs.Direction;
+            }
+        });
+        return result;
+    }
+
+    // Deterministic per-level seed derived from the run seed, so any unvisited level
+    // regenerates identically no matter when it is first entered (or re-entered after load).
+    public static int LevelSeed(int runSeed, int depth)
+    {
+        return unchecked((runSeed * 397) ^ (depth * 31));
+    }
+
+    /// <summary>
+    /// Changes level in the staircase's direction. The current level is captured into the
+    /// cache (so its state, including exploration, survives) and the destination level is
+    /// either restored from the cache or generated lazily on first entry. Returns false at
+    /// the dungeon's top/bottom bounds (a no-op).
+    /// </summary>
+    private bool TryChangeLevel(StairDirection direction)
+    {
+        var newDepth = _depth + (direction == StairDirection.Down ? 1 : -1);
+        if (newDepth < 1 || newDepth > _maxDepth)
+        {
+            return false;
+        }
+
+        if (_playerAction.GetPlayerPosition() is Point playerPos)
+        {
+            _levelCache[_depth] = _serializer.CaptureLevel(_depth, playerPos);
+        }
+
+        var oldDepth = _depth;
+        _depth = newDepth;
+
+        if (_levelCache.TryGetValue(newDepth, out var cached))
+        {
+            var arrival = _serializer.LoadLevel(cached);
+            _visibility.Sync(_spatial.GetTileMap());
+            _visibility.RestoreExplored(cached.Explored);
+            _playerAction.SetPlayerPosition(arrival);
+        }
+        else
+        {
+            GenerateLevel(newDepth, LevelSeed(_runSeed, newDepth));
+        }
+
+        return true;
+    }
+
+    /// <summary>Generates a fresh level at the given depth with its own deterministic seed.</summary>
+    private void GenerateLevel(int depth, int levelSeed)
+    {
+        var rng = new Random(levelSeed);
+        _generator.Reset(rng);
+        var tiles = _layout.Generate(_mapWidth, _mapHeight, levelSeed);
+        _spatial.Reset(tiles);
+        _visibility.Sync(tiles);
+        _visibility.ClearExplored();
+
+        _serializer.ClearNonPlayerEntities();
+        var entry = _generator.GenerateNewLevel(depth, _maxDepth);
+        _playerAction.SetPlayerPosition(entry);
     }
 
     // ---- Private helpers ----

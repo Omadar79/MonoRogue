@@ -11,7 +11,7 @@ public sealed class SpatialMap
 {
     private readonly World _world;
     private readonly QueryDescription _blockingEntities;
-    private readonly TileMap _tiles;
+    private TileMap _tiles;
 
     public SpatialMap(World world, int width, int height)
         : this(world, new TileMap(width, height))
@@ -23,6 +23,12 @@ public sealed class SpatialMap
         _world = world;
         _tiles = tiles;
         _blockingEntities = new QueryDescription().WithAll<Position, BlocksMovement>();
+    }
+
+    /// <summary>Swaps in a new terrain grid, e.g. when generating or loading another dungeon level.</summary>
+    public void Reset(TileMap tiles)
+    {
+        _tiles = tiles;
     }
 
     public int GetWidth() => _tiles.GetWidth();
@@ -95,11 +101,24 @@ public sealed class SpatialMap
         return PickRandomCell(rng, _tiles.IsWalkable);
     }
 
+    // Same as <see cref="GetRandomWalkableCell(Random)"/> but never returns the excluded cell
+    // (e.g. keep treasure/items off the staircase the player will arrive on).
+    public Point? GetRandomWalkableCell(Random rng, Point exclude)
+    {
+        return PickRandomCell(rng, p => _tiles.IsWalkable(p) && p != exclude);
+    }
+
     // Returns a uniformly random cell that is both walkable and not currently blocked by an entity, or <c>null</c>
     //  if none exists. Used to place blocking entities (player, monsters, obstacles) without overlapping each other.
     public Point? GetRandomOpenCell(Random rng)
     {
         return PickRandomCell(rng, CanOccupy);
+    }
+
+    // Same as <see cref="GetRandomOpenCell(Random)"/> but never returns the excluded cell.
+    public Point? GetRandomOpenCell(Random rng, Point exclude)
+    {
+        return PickRandomCell(rng, p => p != exclude && CanOccupy(p));
     }
 
     private Point? PickRandomCell(Random rng, Func<Point, bool> predicate)

@@ -57,8 +57,19 @@ the built executable automatically.
 
 ## Save format
 
-Saves are JSON via `MapData` with a versioned `Version` field (currently `4`). Newer DTO
-fields are optional so legacy saves remain loadable.
+Saves are JSON via `MapData` with a versioned `Version` field (currently `6`). Newer DTO
+fields are optional so legacy saves remain loadable. The save stores the live level (its
+entities, effects, terrain, and explored cells), the dungeon depth and run seed, and
+snapshots of every previously visited level.
+
+## Multi-level dungeons
+
+Dungeons are `GameConstants.MaxDungeonDepth` levels deep (default 6). Stairs are
+non-blocking entities (`<` down, `>` up); stepping onto one changes level. Departed
+levels are cached with their full state (entities, terrain, exploration) and restored on
+return; levels that have never been entered are generated lazily the first time the
+player arrives, from a deterministic per-level seed. The player (plus HP, inventory,
+experience, and personal effects) carries across levels.
 
 ## CI
 

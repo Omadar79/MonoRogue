@@ -25,7 +25,8 @@ public sealed record EntityDTO(
     int? Health = null,
     int? MaxHealth = null,
     int? Attack = null,
-    int Experience = 0);
+    int Experience = 0,
+    StairDirection? Stairs = null);
 
 public sealed record EffectDTO(
 	int TargetSavedEntityId,
@@ -45,7 +46,26 @@ public sealed record MapData(
     int Version = 5,
     List<ItemStackDTO>? Inventory = null,
     int PlayerExperience = 0,
-    List<TileKind>? Tiles = null);
+    List<TileKind>? Tiles = null,
+    int Depth = 1,
+    int Seed = 0,
+    List<LevelDataDTO>? Levels = null,
+    List<VisibilityCellDTO>? Visibility = null);
+
+// One explored map cell. Only explored cells are stored; unlisted cells are unexplored.
+public sealed record VisibilityCellDTO(int X, int Y);
+
+// State of one dungeon level (everything except the player). Levels are captured
+// when the player leaves them and restored when the player returns; levels that
+// have never been entered are generated lazily on first entry.
+public sealed record LevelDataDTO(
+    int Depth,
+    List<EntityDTO> Entities,
+    List<EffectDTO> Effects,
+    List<TileKind> Tiles,
+    List<VisibilityCellDTO> Explored,
+    int PlayerX,
+    int PlayerY);
 
 public sealed record PlayerState(int X, int Y, GlyphDTO Glyph /* add stats/inventory fields here as needed */);
 

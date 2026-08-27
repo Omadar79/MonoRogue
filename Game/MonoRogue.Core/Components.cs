@@ -174,10 +174,27 @@ public readonly record struct TurnResult(
     bool PotionUsed = false,
     int HealAmount = 0,
     string? UsedItemName = null,
-    int ExperienceGained = 0);
+    int ExperienceGained = 0,
+    bool LevelChanged = false,
+    int Depth = 1);
 
 public readonly record struct EffectTickResult(int TicksProcessed, int EffectsExpired);
 
 public readonly struct BlocksMovement
 {
+}
+
+// Direction a staircase leads. Up-stairs return toward the surface; down-stairs
+// descend toward the bottom of the dungeon.
+public enum StairDirection
+{
+    Up,
+    Down
+}
+
+// Marks an entity as a staircase. Stairs are non-blocking and trigger a level
+// change when the player steps onto them.
+public struct Stairs
+{
+    public StairDirection Direction;
 }

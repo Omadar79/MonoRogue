@@ -22,7 +22,9 @@ public sealed class VisibilityMap
         Sync(tiles);
     }
 
-    //Rebuilds the RogueSharp map from the current terrain grid, clearing memory.
+    //Rebuilds the RogueSharp map from the current terrain grid, clearing sight and exploration
+    //memory. Restore explored memory afterwards with <see cref="RestoreExplored"/> when the
+    //level being loaded was visited before.
     public void Sync(TileMap tiles)
     {
         _map.Initialize(tiles.GetWidth(), tiles.GetHeight());
@@ -55,6 +57,35 @@ public sealed class VisibilityMap
     public bool IsInFov(int x, int y) => _inFov.Contains((x, y));
 
     public bool IsExplored(int x, int y) => _explored.Contains((x, y));
+
+    /// <summary>All cells ever seen on the current level (explored memory).</summary>
+    public List<VisibilityCellDTO> CaptureExplored()
+    {
+        var cells = new List<VisibilityCellDTO>(_explored.Count);
+        foreach (var (x, y) in _explored)
+        {
+            cells.Add(new VisibilityCellDTO(x, y));
+        }
+        return cells;
+    }
+
+    /// <summary>Restores explored memory from a prior capture. Call after <see cref="Sync"/> for the same level.</summary>
+    public void RestoreExplored(List<VisibilityCellDTO> cells)
+    {
+        foreach (var cell in cells)
+        {
+            if (cell.X >= 0 && cell.X < _map.Width && cell.Y >= 0 && cell.Y < _map.Height)
+            {
+                _explored.Add((cell.X, cell.Y));
+            }
+        }
+    }
+
+    /// <summary>Clears exploration memory (a fresh, never-visited level).</summary>
+    public void ClearExplored()
+    {
+        _explored.Clear();
+    }
 
     public CellVisibility GetVisibility(int x, int y)
     {
